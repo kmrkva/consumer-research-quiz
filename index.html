@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Consumer Behavior Quiz — Causal Inference &amp; Research Methods</title>
+<meta name="description" content="Practice quiz on correlation vs. causation, incrementality, p-values, gold-standard experiments, and research methods in consumer behavior." />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <main id="screen-root" aria-live="polite"></main>
+    <footer class="site-footer">
+      <span>Consumer Behavior — Causal Inference &amp; Research Methods Practice Quiz</span>
+      <button id="reset-progress" class="btn-link btn-tiny" title="Clear saved progress on this device">Reset my saved progress on this device</button>
+    </footer>
+  </div>
+
+  <script src="questions.js"></script>
+  <script src="app.js"></script>
+  <script>
+    document.getElementById('reset-progress').addEventListener('click', function () {
+      if (confirm('Clear all saved progress (mastery levels and best score) on this device? This cannot be undone.')) {
+        localStorage.removeItem('cbquiz_state_v1');
+        location.reload();
+      }
+    });
+  </script>
+</body>
+</html>
