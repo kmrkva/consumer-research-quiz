@@ -57,6 +57,11 @@
   function article(word) {
     return /^[aeiouAEIOU]/.test(word) ? "an" : "a";
   }
+  /* Some CHANNELS entries already contain the word "campaign" (e.g. "Instagram
+     ad campaign"); avoid producing "...ad campaign campaign". */
+  function asCampaign(channel) {
+    return /campaign/i.test(channel) ? channel : `${channel} campaign`;
+  }
   function cap(s) {
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
@@ -299,7 +304,7 @@
   function q_causation_differinggroups() {
     const pairs = [
       { g1: "Mac users", g2: "PC users", singularA: "a Mac user", singularB: "a PC user", co: "an online retailer", metric1: "less likely to make a purchase", metric2: "spent more money per purchase when they did buy" },
-      { g1: "customers who read online reviews before buying", g2: "customers who don't", singularA: "someone who reads online reviews before buying", singularB: "someone who doesn't", co: "an electronics retailer", metric1: "took longer to complete checkout", metric2: "had a higher average order value" },
+      { g1: "customers who read online reviews before buying", g2: "customers who don't", singularA: "someone who reads online reviews before buying", singularB: "someone who doesn't", co: "an electronics retailer", metric1: "slower to complete checkout", metric2: "had a higher average order value" },
     ];
     const s = pick(pairs);
     const stem = `${cap(s.co)} compares the behavior of ${s.g1} to ${s.g2} (a naturally occurring, non-randomized split — customers weren't assigned to be one or the other). They find that ${s.g1} were ${s.metric1}, but ${s.metric2}. What should they conclude?`;
@@ -380,7 +385,7 @@
     const channel = pick(CHANNELS);
     const pct = randInt(10, 35);
     const season = pick(["the holiday season", "back-to-school season", "a competitor's outage", "a broader market upswing"]);
-    const stem = `${company} ran ${article(channel)} ${channel} campaign all last month. Sales rose ${pct}% compared to the month before, which overlapped with ${season}. The team wants to claim the campaign caused an incremental ${pct}% increase in purchases. Can they conclude that?`;
+    const stem = `${company} ran ${article(channel)} ${asCampaign(channel)} all last month. Sales rose ${pct}% compared to the month before, which overlapped with ${season}. The team wants to claim the campaign caused an incremental ${pct}% increase in purchases. Can they conclude that?`;
     const options = [
       `Yes — a ${pct}% increase after the campaign launched is clear evidence of incremental lift.`,
       `No — without a comparison group that didn't see the campaign (a holdout), it's impossible to separate the campaign's effect from ${season} or other trends happening at the same time.`,
@@ -671,7 +676,7 @@
     const company = pick(COMPANIES);
     const stem = `${company} rolls out a promotion in a handful of ${plural} chosen by the sales team (not randomly) because of budget constraints. To estimate the promotion's causal effect more credibly than a simple before/after look, what's a reasonable next-best approach?`;
     const options = [
-      "Compare the treated " + singular.replace(/^\w/, (c) => c.toUpperCase()) + "s only to national averages from a completely different time period with no other adjustment.",
+      "Compare the treated " + singular + "s only to national averages from a completely different time period with no other adjustment.",
       `Find a matched comparison group of similar, untreated ${plural} (similar size, demographics, and pre-trend sales) to serve as a synthetic control, and compare how outcomes diverge after the promotion starts.`,
       "Assume the promotion had no effect since it wasn't randomly assigned.",
       "Only look at the single best-performing " + singular + " and generalize from it.",
