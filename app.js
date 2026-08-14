@@ -38,6 +38,7 @@
       mastery: {}, // conceptId -> {level, seen, correct}
       history16: [], // [{date, score, total}]
       bestScore16: null,
+      lastCategorySelection: null, // array of concept ids, or null = "all / mixed"
     },
     loadState()
   );
@@ -138,6 +139,7 @@
     root.innerHTML = "";
     const renderers = {
       start: renderStart,
+      "quizme-setup": renderQuizMeSetup,
       quizme: renderQuizMe,
       name16: renderName16,
       blueprint: renderBlueprint,
@@ -182,7 +184,7 @@
       </section>
     `);
     root.appendChild(node);
-    node.querySelector("#btn-quizme").addEventListener("click", () => go({ screen: "quizme" }));
+    node.querySelector("#btn-quizme").addEventListener("click", () => go({ screen: "quizme-setup" }));
     node.querySelector("#btn-16").addEventListener("click", () => go({ screen: "name16" }));
   }
 
@@ -194,8 +196,8 @@
     return remaining + 0.35; // mastered concepts still show up occasionally for spaced review
   }
 
-  function pickWeightedConcept(avoidId) {
-    let ids = QB.CONCEPTS.map((c) => c.id);
+  function pickWeightedConcept(avoidId, allowedIds) {
+    let ids = allowedIds && allowedIds.length ? allowedIds.slice() : QB.CONCEPTS.map((c) => c.id);
     if (avoidId && ids.length > 1) {
       // soft preference: don't repeat the same concept twice in a row unless weights force it
       const filtered = ids.filter((id) => id !== avoidId);
@@ -215,18 +217,66 @@
     return QB.CONCEPTS.every((c) => persisted.mastery[c.id].level >= MASTERY_TARGET);
   }
 
-  function renderMasteryDashboard(highlightId) {
+  function renderMasteryDashboard(highlightId, allowedIds) {
     const items = QB.CONCEPTS.map((c) => {
       const m = persisted.mastery[c.id];
       const pct = Math.round((m.level / MASTERY_TARGET) * 100);
       const mastered = m.level >= MASTERY_TARGET;
+      const inScope = !allowedIds || allowedIds.includes(c.id);
       return `
-        <div class="mastery-item ${mastered ? "mastered" : ""} ${highlightId === c.id ? "active" : ""}">
+        <div class="mastery-item ${mastered ? "mastered" : ""} ${highlightId === c.id ? "active" : ""} ${inScope ? "" : "out-of-scope"}">
           <div class="mastery-label"><span class="letter">(${c.letter})</span> ${c.label} ${mastered ? "✓" : ""}</div>
           <div class="mastery-bar"><div class="mastery-bar-fill" style="width:${pct}%"></div></div>
         </div>`;
     }).join("");
     return `<div class="mastery-dashboard">${items}</div>`;
+  }
+
+  /* Setup screen: choose which categories to practice before entering Quiz Me. */
+  function renderQuizMeSetup() {
+    const preselected = persisted.lastCategorySelection && persisted.lastCategorySelection.length ? persisted.lastCategorySelection : QB.CONCEPTS.map((c) => c.id);
+
+    const node = el(`
+      <section class="screen setup-screen">
+        <h1>Quiz Me</h1>
+        <p class="lede">Practice all six concept areas mixed together, or focus on just a few. You can change this anytime.</p>
+        <div class="category-picker" id="category-picker">
+          ${QB.CONCEPTS.map(
+            (c) => `
+            <label class="category-option">
+              <input type="checkbox" value="${c.id}" ${preselected.includes(c.id) ? "checked" : ""} />
+              <span><span class="letter">(${c.letter})</span> ${c.label}</span>
+            </label>`
+          ).join("")}
+        </div>
+        <div class="quiz-actions">
+          <button class="btn btn-secondary" id="btn-select-all">Select all</button>
+          <button class="btn btn-secondary" id="btn-select-none">Clear</button>
+        </div>
+        <div class="quiz-actions" style="margin-top:20px;">
+          <button class="btn btn-link" id="btn-back-start">&larr; Back to start</button>
+          <button class="btn btn-primary" id="btn-start-practice">Start practicing</button>
+        </div>
+      </section>
+    `);
+    root.appendChild(node);
+
+    const checkboxes = () => Array.from(node.querySelectorAll('#category-picker input[type="checkbox"]'));
+    node.querySelector("#btn-select-all").addEventListener("click", () => checkboxes().forEach((cb) => (cb.checked = true)));
+    node.querySelector("#btn-select-none").addEventListener("click", () => checkboxes().forEach((cb) => (cb.checked = false)));
+    node.querySelector("#btn-back-start").addEventListener("click", () => go({ screen: "start" }));
+    node.querySelector("#btn-start-practice").addEventListener("click", () => {
+      const selected = checkboxes()
+        .filter((cb) => cb.checked)
+        .map((cb) => cb.value);
+      if (!selected.length) {
+        alert("Select at least one category to practice.");
+        return;
+      }
+      persisted.lastCategorySelection = selected.length === QB.CONCEPTS.length ? null : selected;
+      saveState();
+      go({ screen: "quizme", state: { current: null, avoidId: null, answered: false, selected: null, sessionCorrect: 0, sessionTotal: 0, categories: selected } });
+    });
   }
 
   /* Renders either single-choice (buttons) or multi-select ("select all
@@ -307,12 +357,13 @@
 
   function renderQuizMe() {
     if (!view.state) {
-      view.state = { current: null, avoidId: null, answered: false, selected: null, sessionCorrect: 0, sessionTotal: 0 };
+      view.state = { current: null, avoidId: null, answered: false, selected: null, sessionCorrect: 0, sessionTotal: 0, categories: null };
     }
     const state = view.state;
+    const categories = state.categories && state.categories.length ? state.categories : null;
 
     if (!state.current) {
-      const conceptId = pickWeightedConcept(state.avoidId);
+      const conceptId = pickWeightedConcept(state.avoidId, categories);
       state.current = QB.generate(conceptId);
       state.answered = false;
       state.selected = null;
@@ -321,6 +372,7 @@
     const q = state.current;
     const concept = QB.conceptById(q.concept);
     const mastered = allMastered();
+    const scopeLabel = categories ? categories.map((id) => "(" + QB.conceptById(id).letter + ")").join(" ") : "All categories (mixed)";
 
     const node = el(`
       <section class="screen quiz-screen">
@@ -328,11 +380,13 @@
           <button class="btn btn-link" id="btn-back-start">&larr; Back to start</button>
           <div class="quiz-session-stats">Session: ${state.sessionCorrect}/${state.sessionTotal} correct</div>
         </div>
+        <div class="category-scope-bar">Practicing: <strong>${scopeLabel}</strong> · <button class="btn-link btn-tiny" id="btn-change-categories">change</button></div>
         ${mastered ? `<div class="mastery-banner">🎉 You've reached mastery on all six concepts! Keep practicing below anytime, or head back to try the 16-question quiz.</div>` : ""}
-        ${renderMasteryDashboard(q.concept)}
+        ${renderMasteryDashboard(q.concept, categories)}
         <div class="question-card">
           <div class="concept-tag">(${concept.letter}) ${concept.label}</div>
           <p class="question-stem">${escapeHtml(q.stem)}</p>
+          ${q.visual ? `<div class="question-visual">${q.visual}</div>` : ""}
           <div class="options" id="options"></div>
           <div class="feedback" id="feedback" style="display:none;"></div>
           <div class="quiz-actions">
@@ -366,10 +420,12 @@
         selected: null,
         sessionCorrect: state.sessionCorrect,
         sessionTotal: state.sessionTotal,
+        categories: state.categories,
       };
       go({ screen: "quizme", state: nextState });
     });
     node.querySelector("#btn-back-start").addEventListener("click", () => go({ screen: "start" }));
+    node.querySelector("#btn-change-categories").addEventListener("click", () => go({ screen: "quizme-setup" }));
 
     root.appendChild(node);
   }
@@ -434,6 +490,7 @@
         <div class="question-card">
           <div class="concept-tag">(${concept.letter}) ${concept.label}</div>
           <p class="question-stem">${escapeHtml(q.stem)}</p>
+          ${q.visual ? `<div class="question-visual">${q.visual}</div>` : ""}
           <div class="options" id="options"></div>
           <div class="feedback" id="feedback" style="display:none;"></div>
           <div class="quiz-actions">

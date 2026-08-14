@@ -7,18 +7,20 @@ A no-backend, static web app with two modes:
 
 ### The six concept areas & 16-question blueprint
 
-| # | Concept | Questions in the 16-Q quiz |
-|---|---|---|
-| a | Correlation, Causation & Confounds — third-variable confounds, selection effects, and reverse causality treated as one unified topic, emphasizing the *logic* of the problem (not memorizing labels) | 4 |
-| b | Incrementality — holdouts, high-intent-targeting bias, double-counted attribution | 2 |
-| c | P-values, correlation coefficients, basic vs. applied research, interpreting non-significant results | 2 |
-| d | Random Assignment, Gold-Standard Experiments & A/B Tests — *why* randomization (not pre/post) supports causal claims, recognizing that a true A/B test is a randomized experiment, and getting closer to the gold standard without individual-level randomization (cluster/geo randomization, difference-in-differences, matching) | 4 |
-| e | Applied Business Scenarios — picking the best method to answer a firm's causal question (webpage changes, campaign ROI, price framing, chatbot rollouts) | 2 |
-| f | Alternative Methods & Their Limits — focus groups, observational data, ethical/practical constraints, and why formal A/B tests fail in very low-traffic stores | 2 |
+This question bank (v2) was built directly from the instructor's lecture deck, existing exam questions, and in-class scenario handouts — most "flagship" questions are close adaptations of real cases covered in class (Airbnb's pricing experiment, the Head Start lottery, the Newton Baby / branded-search "ROAS trap," the Google Flights before/after-vs-A/B comparison, dog ownership & longevity, the Green Bay Packers email scenario, the Walmart badge test, etc.), with invented placeholder companies used only for the fully-randomized generic templates. Content deliberately excludes anything flagged as "beyond this class" in the lecture (matching, difference-in-differences, instrumental variables, regression discontinuity, confidence intervals, correlation-coefficient magnitude, "statistical power" and "null hypothesis" as bare terms) in favor of the plain-language framings the course actually uses (the coin-flip / sample-size intuition for p-values, positive/negative/zero for correlation direction, etc.).
 
-(a) and (d) get the heaviest weight since they cover the broadest ground — (a) folds together confounds, selection effects, and reverse causality as one topic per your preference, and (d) folds together the logic of random assignment, gold-standard experiments, A/B test recognition, and quasi-experimental workarounds.
+| # | Concept | Pool size | Questions in the 16-Q quiz |
+|---|---|---|---|
+| a | Correlation, Causation, Confounds & Selection Effects | 8 | 3 |
+| b | Incrementality | 6 | 3 |
+| c | P-values & Research Basics | 5 | 2 |
+| d | Random Assignment, A/B Tests & Cluster Randomization | 10 | 4 |
+| e | Applied Business Scenarios | 4 | 2 |
+| f | Alternative Methods & When Experiments Aren't Feasible | 4 | 2 |
 
-A few questions in (a), (d), and (e) are **multi-select ("select all that apply")** questions, graded all-or-nothing (every correct option must be selected and no incorrect ones), mirroring that format from your source material.
+(d) gets the heaviest weight since random assignment / A-B tests / cluster randomization is the single biggest topic in the lecture deck (roughly 40% of it). "Pool size" is how many distinct question templates exist for that concept — larger than the number of slots used per attempt, so retakes rotate through more variety than just 16 questions' worth.
+
+A few questions in (a), (d), and (e) are **multi-select ("select all that apply")** questions, graded all-or-nothing (every correct option must be selected and no incorrect ones), mirroring that format from the instructor's real exam. One question (a1, correlation direction) renders a small inline SVG scatterplot rather than describing the pattern in words.
 
 It's plain HTML/CSS/JS — no build step, no server, no dependencies. That makes it a good fit for a free static host like Netlify or GitHub Pages.
 

@@ -2,18 +2,18 @@
    Consumer Behavior — Causal Inference & Research Methods Quiz
    questions.js
    ---------------------------------------------------------------------
-   Generates randomized, template-based questions across six concept
-   areas. Each generator builds a fresh question every call: numbers,
-   company/product names, and — importantly — often the underlying
-   scenario branch (confounded vs. clean, significant vs. not, etc.) are
-   chosen at random, so the correct answer isn't always in the same
-   "slot" and students can't memorize a pattern.
+   Question bank v2 — rebuilt from the instructor's lecture deck, existing
+   exam questions, and in-class scenario handouts. Real company names /
+   cases (marked below) are adapted closely from those materials; fully
+   randomized templated questions use invented placeholder companies.
 
    Two question shapes are supported:
      - "single"  : classic multiple choice, exactly one correct option.
      - "multi"   : "select all that apply" — one or more correct options,
                    graded all-or-nothing (must select every correct
                    option and no incorrect ones).
+   Either shape may optionally carry a `visual` field (inline SVG markup)
+   rendered above the answer options.
    ========================================================================== */
 
 (function (global) {
@@ -53,23 +53,17 @@
   function uid() {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
-  /* Naive but sufficient indefinite article for our fixed vocab lists. */
   function article(word) {
     return /^[aeiouAEIOU]/.test(word) ? "an" : "a";
-  }
-  /* Some CHANNELS entries already contain the word "campaign" (e.g. "Instagram
-     ad campaign"); avoid producing "...ad campaign campaign". */
-  function asCampaign(channel) {
-    return /campaign/i.test(channel) ? channel : `${channel} campaign`;
   }
   function cap(s) {
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
+  function asCampaign(channel) {
+    return /campaign/i.test(channel) ? channel : `${channel} campaign`;
+  }
 
-  /* Build a single-answer question from a stem, an array of option strings,
-     the index of the correct option (before shuffling), and an explanation.
-     Options are shuffled so the correct answer's position changes every time. */
-  function mkQuestion(concept, stem, options, correctIdx, explanation) {
+  function mkQuestion(concept, stem, options, correctIdx, explanation, visual) {
     const tagged = options.map((text, i) => ({ text, correct: i === correctIdx }));
     const shuffled = shuffle(tagged);
     return {
@@ -80,12 +74,11 @@
       options: shuffled.map((o) => o.text),
       correctIndex: shuffled.findIndex((o) => o.correct),
       explanation,
+      visual: visual || null,
     };
   }
 
-  /* Build a "select all that apply" question. correctIndices refers to
-     indices in `options` BEFORE shuffling. Graded all-or-nothing. */
-  function mkMultiQuestion(concept, stem, options, correctIndices, explanation) {
+  function mkMultiQuestion(concept, stem, options, correctIndices, explanation, visual) {
     const tagged = options.map((text, i) => ({ text, correct: correctIndices.includes(i) }));
     const shuffled = shuffle(tagged);
     return {
@@ -96,6 +89,7 @@
       options: shuffled.map((o) => o.text),
       correctIndices: shuffled.reduce((acc, o, i) => (o.correct ? acc.concat(i) : acc), []),
       explanation,
+      visual: visual || null,
     };
   }
 
@@ -117,6 +111,7 @@
     "Harbor Books (online bookstore)",
     "Fleetwood Tires (auto parts retailer)",
   ];
+  const FITNESS_APPS = ["FitPulse", "IronLoop", "PeakForm", "TrailFit", "CoreWorks", "Momentum Fitness"];
   const CHANNELS = [
     "email newsletter",
     "Instagram ad campaign",
@@ -129,243 +124,172 @@
     "retargeting ad",
     "podcast ad read",
   ];
-  const METRICS = [
-    "purchase rate",
-    "average order value",
-    "click-through rate",
-    "app downloads",
-    "repeat-purchase rate",
-    "cart size",
-    "renewal rate",
-    "sign-up rate",
-  ];
   const REGIONS = [
     ["zip codes", "zip code"],
     ["states", "state"],
     ["metro areas", "metro area"],
     ["store locations", "store"],
   ];
-  const RESEARCHERS = ["a research team", "an analyst", "a marketing science team", "a grad student researcher"];
 
-  /* Two harmless trends that rise together over time with no plausible causal
-     link, for spurious-correlation questions (in the spirit of the classic
-     "Spurious Correlations" internet graphs — genericized here). */
-  const SPURIOUS_PAIRS = [
-    { x: "per-capita organic food spending", y: "the number of new meditation apps launched that year" },
-    { x: "national cheese consumption", y: "the number of new craft breweries opened that year" },
-    { x: "sales of reusable water bottles", y: "the number of new coding bootcamps founded" },
-    { x: "average smartphone screen size", y: "the number of new podcast shows launched" },
-    { x: "sales of standing desks", y: "the number of new plant-based restaurants opened" },
+  /* ============================================================
+     (a) Correlation, Causation, Confounds & Selection Effects
+     ============================================================ */
+
+  function clamp01(v) {
+    return Math.max(0, Math.min(1, v));
+  }
+
+  /* Simple inline-SVG scatterplot with a positive, negative, or zero trend. */
+  function scatterSVG(direction) {
+    const W = 320,
+      H = 190,
+      pad = 28;
+    const n = 16;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const x = Math.random();
+      let y;
+      if (direction === "positive") y = clamp01(x + randFloat(-0.24, 0.24, 3));
+      else if (direction === "negative") y = clamp01(1 - x + randFloat(-0.24, 0.24, 3));
+      else y = Math.random();
+      pts.push([x, y]);
+    }
+    const toX = (v) => (pad + v * (W - 2 * pad)).toFixed(1);
+    const toY = (v) => (H - pad - v * (H - 2 * pad)).toFixed(1);
+    const dots = pts.map(([x, y]) => `<circle cx="${toX(x)}" cy="${toY(y)}" r="4.5" fill="#3454d1" fill-opacity="0.72"/>`).join("");
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="180" role="img" aria-label="scatterplot of the two variables">
+      <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="#c7cdda" stroke-width="1.5"/>
+      <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${H - pad}" stroke="#c7cdda" stroke-width="1.5"/>
+      ${dots}
+    </svg>`;
+  }
+
+  const AXIS_LABEL_PAIRS = [
+    ["Advertising spend", "Sales"],
+    ["Price discount %", "Units sold"],
+    ["Email frequency", "Unsubscribe rate"],
+    ["Ad impressions", "Website visits"],
+    ["Loyalty-app usage", "Repeat purchases"],
   ];
 
-  /* ============================ (a) Correlation, Causation & Confounds ===== */
-  /* Selection effects, third-variable confounds, and reverse causality are
-     treated as one unified topic here — the emphasis is on recognizing the
-     LOGIC of the problem in a scenario, not on labeling which named bias it
-     is. Many questions use a three-way "yes / no-but-possible / no-way"
-     answer pattern that mirrors how these judgment calls actually work:
-     a plausible alternative explanation means you can't confidently claim
-     causation, but it doesn't mean causation is impossible either. */
+  function q_a1_correlation_type() {
+    const direction = pick(["positive", "negative", "zero"]);
+    const [xl, yl] = pick(AXIS_LABEL_PAIRS);
+    const svg = scatterSVG(direction);
+    const stem = `The chart below plots ${xl} (x-axis) against ${yl} (y-axis) across many stores. What type of correlation is shown?`;
+    const options = ["A positive correlation", "A negative correlation", "No consistent relationship (a zero correlation)", "An illusory correlation"];
+    const correctIdx = direction === "positive" ? 0 : direction === "negative" ? 1 : 2;
+    return mkQuestion(
+      "causation",
+      stem,
+      options,
+      correctIdx,
+      direction === "positive"
+        ? "As one variable goes up, the other tends to go up too — that's a positive correlation. (Note: this describes the pattern only — it says nothing about whether one variable causes the other.)"
+        : direction === "negative"
+        ? "As one variable goes up, the other tends to go down — that's a negative correlation. (This describes the pattern only, not causation.)"
+        : "The points are scattered with no consistent up-or-down pattern — that's a zero (or near-zero) correlation. Knowing one variable's value tells you basically nothing about the other.",
+      svg
+    );
+  }
 
-  function q_causation_confound() {
+  function q_a2_confound() {
     const company = pick(COMPANIES);
-    const confounds = [
-      { driver: "the holiday shopping season", x: "hours of paid social ads shown", y: "weekly sales" },
-      { driver: "overall market demand that week", x: "number of promotional emails sent", y: "revenue" },
-      { driver: "which customers already loved the brand", x: "customer engagement with the loyalty app", y: "total spending" },
-      { driver: "local weather", x: "foot traffic near the store", y: "seasonal product sales" },
-      { driver: "which regions have higher income", x: "premium subscription ad exposure", y: "premium plan sign-ups" },
-    ];
-    const c = pick(confounds);
-    const r = randFloat(0.35, 0.78, 2);
-    const stem = `At ${company}, ${pick(RESEARCHERS)} finds that ${c.x} is positively correlated with ${c.y} (r = ${r}). Someone on the team concludes: "This proves that increasing ${c.x} causes higher ${c.y}." What's the best evaluation of that claim?`;
+    const x = pick(["ad spending", "promotional email volume", "influencer partnerships"]);
+    const y = pick(["sales", "revenue", "sign-ups"]);
+    const stem = `${company} finds that ${x} and ${y} are both noticeably higher in December than in other months. A team member says: "This proves ${x} causes higher ${y}." Is that a safe conclusion?`;
     const options = [
-      "The claim is well-supported — a correlation this strong is essentially proof of causation.",
-      `The claim is premature: ${c.driver} could plausibly be driving both variables at once, so a confident causal conclusion isn't warranted from this correlation alone — though a causal effect is still possible.`,
-      "The claim is wrong in the opposite direction — correlation coefficients can never be positive for real business metrics.",
-      "The claim would only be wrong if the correlation were negative instead of positive.",
+      "Yes — since both go up together, that's essentially proof of a causal link.",
+      `Not necessarily — the holiday season itself could be driving both ${x} and ${y} at the same time, so we can't be confident the ${x} is what's causing the higher ${y}. (Maybe it does, maybe it doesn't — we'd need a real test to know.)`,
+      "No — ad spending and sales can never be causally related.",
+      "It depends only on whether the correlation is positive or negative.",
     ];
     return mkQuestion(
       "causation",
       stem,
       options,
       1,
-      `A correlation, even a fairly strong one, doesn't tell us the direction of causality or rule out a third variable. Here, ${c.driver} plausibly affects both ${c.x} and ${c.y}. That doesn't prove there's no causal effect — it just means we can't confidently conclude one from this evidence. To make a causal claim we'd want an experiment (or a strong quasi-experimental design) that isolates ${c.x} from confounds like this.`
+      `Two things happening together doesn't tell us which (if either) caused the other. Here, the holiday season is a third variable — a plausible reason both ${x} and ${y} would rise at the same time, with no test yet ruling that out. This doesn't mean ${x} definitely has no effect — it just means we can't confidently conclude it does from this alone.`
     );
   }
 
-  function q_causation_selfselection() {
-    const setups = [
-      { pool: "1,000 employees", choiceDesc: "choose whether to join a voluntary mentorship program or remain in a no-program group", outcome: "career satisfaction scores" },
-      { pool: "1,000 customers", choiceDesc: "choose whether to opt into a paid loyalty tier or stay on the free tier", outcome: "annual spending" },
-      { pool: "1,000 students", choiceDesc: "choose whether to be in a group that spends $5 on a gift for someone else, or a control group that doesn't spend the money", outcome: "self-reported mood afterward" },
-      { pool: "1,000 gym members", choiceDesc: "choose whether to sign up for a free nutrition-coaching add-on or not", outcome: "months of continued membership" },
-    ];
-    const s = pick(setups);
-    const stem = `Researchers study a group of ${s.pool}. Each person is allowed to ${s.choiceDesc}, and the researchers later measure ${s.outcome}. They find the group that opted in scored noticeably better on ${s.outcome} than the group that didn't. What can the researchers conclude?`;
+  function q_a3_selfselection() {
+    const n = randInt(150, 300);
+    const p = pick(["p < .05", "p < .01", "p = .02"]);
+    const stem = `Researchers want to study whether drinking coffee improves short-term mood. There are ${n} participants, and each one chooses for themselves whether they want to drink coffee before the study. Afterward, researchers measure everyone's mood and find that those who drank coffee had significantly more positive mood (${p}). Is this a causal study or a correlational study?`;
     const options = [
-      `They can claim that the program/choice caused the improvement in ${s.outcome}.`,
-      `They can only make a correlational claim — because people chose their own group, the two groups may have differed in other ways to begin with (self-selection), so the program's causal effect can't be confidently isolated.`,
-      "They can conclude the program had absolutely no effect on anyone.",
-      "Neither claim is possible because self-reported outcomes are never usable as data.",
+      `This is a causal study — since the difference was statistically significant (${p}), we know coffee caused the better mood.`,
+      "This is a correlational study — participants chose their own group instead of being randomly assigned, so we can't be confident coffee itself caused the mood difference (people who choose to drink coffee might already differ from those who don't).",
+      "This is a causal study, but only because the sample size is large enough.",
+      "Neither — mood can't be measured scientifically.",
     ];
     return mkQuestion(
       "causation",
       stem,
       options,
       1,
-      `Because participants chose their own group, people who opted in may have already been more motivated, engaged, or otherwise different from those who opted out — a classic self-selection confound. That means the comparison is correlational, not causal: the true effect of the program itself is mixed up with pre-existing differences between the kinds of people who choose each option. A randomized experiment (assigning people to groups regardless of their preference) would be needed to isolate the causal effect.`
+      `Statistical significance tells you the difference probably isn't just random noise — but it says nothing about *why* the groups differ. Because participants picked their own group rather than being randomly assigned, coffee-drinkers might differ from non-drinkers in other ways (energy levels, morning routines, etc.) regardless of the coffee itself. Significance can't fix a non-random design.`
     );
   }
 
-  function q_causation_randomizedvalid() {
-    const setups = [
-      { pool: "1,000 students", treat: "drink caffeinated coffee", control: "drink a placebo drink that tastes the same but is decaffeinated", outcome: "complete an exam faster" },
-      { pool: "800 shoppers", treat: "see a webpage with a money-back-guarantee badge", control: "see an identical webpage without the badge", outcome: "are more likely to complete checkout" },
-      { pool: "600 employees", treat: "receive a short mindfulness training", control: "receive a placebo training of equal length on an unrelated topic", outcome: "report lower self-rated stress" },
-    ];
-    const s = pick(setups);
-    const stem = `Research is conducted on a group of ${s.pool}. The researchers randomly assign participants to either a treatment group (who ${s.treat}) or a control group (who ${s.control}). They find that people in the treatment group ${s.outcome} compared to the control group. What can the researchers conclude?`;
+  function q_a4_dogownership_multi() {
+    const stem = `A news article claims that owning a dog causes people to live longer, based on a study finding that dog owners live longer, on average, than non-owners. Before accepting that causal claim, which of the following are plausible alternative explanations? (Select all that apply.)`;
     const options = [
-      "They can claim that the treatment caused this difference between the treatment and control groups.",
-      "They cannot claim causation because the study only measured one outcome.",
-      "They can only make a correlational claim, because any study involving human choice is correlational.",
-      "They cannot claim causation unless the sample included at least 10,000 people.",
+      "Healthier or wealthier people might be more likely to get a dog in the first place (a selection effect) — dog owners could have simply started out healthier.",
+      "Dog owners might simply walk more because of the dog, and it's the extra exercise (a third variable) — not the dog itself — that's driving the health benefit.",
+      "The study measured a very large number of people.",
+      "The difference between dog owners and non-owners was statistically significant.",
     ];
-    return mkQuestion(
+    return mkMultiQuestion(
       "causation",
       stem,
       options,
-      0,
-      "Because participants were randomly assigned to conditions, the treatment and control groups should be equivalent, on average, on every other factor (motivation, prior habits, demographics, etc.) — known and unknown. That's exactly what licenses a causal claim: with random assignment, the treatment is the one systematic difference between groups, so it's reasonable to attribute the outcome difference to it."
+      [0, 1],
+      "A selection effect (healthier/wealthier people choosing to get a dog) and a third variable (exercise from walking the dog) are both genuine alternative explanations for this correlation — neither requires the dog itself to be the cause. A large sample size and statistical significance both just mean the pattern is probably real and not due to noise — neither one tells you *why* the pattern exists, so neither rules out these alternative explanations."
     );
   }
 
-  function q_causation_spurious_graph() {
-    const p = pick(SPURIOUS_PAIRS);
-    const r = randFloat(0.95, 0.99, 3);
-    const stem = `A chart plots two time series from the same 15-year period: ${p.x} and ${p.y}. Both have risen steadily, and the two lines track each other closely (r = ${r}). What should we conclude?`;
+  function q_a5_headstart_multi() {
+    const stem = `Kids who attended Head Start (an early-childhood education program) have higher elementary school grades, on average, than kids who didn't attend. A newspaper claims Head Start causes better grades. Before accepting that, which of the following are plausible alternative explanations? (Select all that apply.)`;
     const options = [
-      `${p.x[0].toUpperCase() + p.x.slice(1)} likely causes ${p.y}.`,
-      `${p.y[0].toUpperCase() + p.y.slice(1)} likely causes ${p.x}.`,
-      `${p.x[0].toUpperCase() + p.x.slice(1)} and ${p.y} have a strong positive correlation over this period, but a shared trend over time (e.g., both rising as the economy/culture changed generally) is a far more plausible explanation than either one causing the other.`,
-      `${p.x[0].toUpperCase() + p.x.slice(1)} and ${p.y} have only a weak correlation, so nothing meaningful can be said.`,
+      "Parents who go through the effort of enrolling their kids in Head Start might already be more involved in their kids' education, regardless of the program itself.",
+      "Families who enroll in Head Start might have other advantages (e.g., living somewhere with stronger elementary schools afterward) that also explain better grades.",
+      "The comparison included both kids who attended and kids who didn't.",
+      "Grades were measured years after the program ended.",
     ];
-    return mkQuestion(
+    return mkMultiQuestion(
       "causation",
       stem,
       options,
-      2,
-      `r = ${r} is a very strong correlation — so "weak correlation" is factually wrong. But two unrelated trends that both happen to rise steadily over the same years will often be strongly correlated purely because of shared time trends, not because either causes the other. This is a classic spurious correlation: strong r, no plausible causal mechanism, and an obvious shared confound (time / broader societal trends).`
+      [0, 1],
+      "Both of these are selection-style concerns: families who choose (and manage) to enroll their kids in Head Start may differ from other families in ways connected to school success, apart from anything the program itself does. Simply comparing attendees to non-attendees (option 3) is just describing the study design, not a flaw by itself, and measuring grades later (option 4) is necessary for the question to make sense — neither one is an alternative explanation."
     );
   }
 
-  function q_causation_beforeafter_nuanced() {
-    const scenarios = [
-      { co: "a grocery chain", action: "re-organized an aisle so competing products were placed farther apart", metric: "average spending per customer", window: "the following month" },
-      { co: "a retailer", action: "moved an in-store promotional sign to a more visible spot", metric: "hourly sales of the promoted item", window: "later that same day" },
-      { co: "an online store", action: "redesigned its checkout flow", metric: "conversion rate", window: "the following month" },
-    ];
-    const s = pick(scenarios);
-    const pct = randInt(4, 15);
-    const stem = `${s.co[0].toUpperCase() + s.co.slice(1)} ${s.action}. They found that ${s.metric} was ${pct}% higher in ${s.window} than it was before the change. What should they conclude?`;
+  function q_a6_anyofabove() {
+    const confound = pick(["it's close to the holidays", "they just launched a new product", "it's their busiest season"]);
+    const stem = `A marketing analyst finds a positive correlation between advertising and sales at their company: monthly sales tend to be higher in months when the company spends more on advertising, and lower in months when they spend less. Which of the following might be true?`;
     const options = [
-      `The change definitely caused the increase in ${s.metric}.`,
-      `It's possible the change caused the increase, but there are other reasonable explanations (seasonality, other simultaneous changes, general trends), so they shouldn't make a confident causal claim from this comparison alone.`,
-      `The change definitely did NOT cause any change in ${s.metric}.`,
-      "The comparison is meaningless because percentages can't be used to describe business metrics.",
-    ];
-    return mkQuestion(
-      "causation",
-      stem,
-      options,
-      1,
-      `A simple before/after comparison is confounded with everything else that changed over that same window — seasonality, other initiatives, broader trends. That means a causal effect is plausible but not confidently established either way. Note the careful wording: the right answer isn't "no effect," it's "can't be confident," because the design doesn't rule the effect in OR out.`
-    );
-  }
-
-  function q_causation_anyofabove() {
-    const stem = `A marketing analyst finds a positive correlation between advertising spend and sales at their company: monthly sales tend to be higher in months when the company spends more on advertising. Which of the following might be true?`;
-    const options = [
-      "Advertising causes an increase in sales at this company.",
-      "Higher sales give the company more money available for advertising, which leads them to invest more in it (reverse causality).",
-      "A third variable might explain both — for example, the company may have launched a great new product, which explains both the sales increase and the increased advertising around it.",
-      "Any of the above might be true — the correlation alone can't tell us which explanation (or combination) is correct.",
+      "Advertising might cause an increase in sales at this company.",
+      "When the company has higher sales, this might lead them to have more money available for advertising, which could lead them to invest more in it (reverse causality).",
+      `A third variable might explain both — for example, the company might spend more on ads AND have higher sales around the same time simply because ${confound}.`,
+      "Any of the above might be true.",
     ];
     return mkQuestion(
       "causation",
       stem,
       options,
       3,
-      "This is the core lesson of correlational data: a positive correlation is equally consistent with forward causation, reverse causation, and a third-variable confound (or some mix of all three). Without an experiment or a strong quasi-experimental design, the correlation alone can't distinguish between these explanations — so all of them remain live possibilities."
+      "This is the core lesson of correlational data: a positive correlation is equally consistent with forward causation, reverse causation, and a third-variable explanation (or some mix of all three). Without a real test, the correlation alone can't tell us which explanation (or combination) is correct — so all of them remain live possibilities."
     );
   }
 
-  function q_causation_differinggroups() {
-    const pairs = [
-      { g1: "Mac users", g2: "PC users", singularA: "a Mac user", singularB: "a PC user", co: "an online retailer", metric1: "less likely to make a purchase", metric2: "spent more money per purchase when they did buy" },
-      { g1: "customers who read online reviews before buying", g2: "customers who don't", singularA: "someone who reads online reviews before buying", singularB: "someone who doesn't", co: "an electronics retailer", metric1: "slower to complete checkout", metric2: "had a higher average order value" },
-    ];
-    const s = pick(pairs);
-    const stem = `${cap(s.co)} compares the behavior of ${s.g1} to ${s.g2} (a naturally occurring, non-randomized split — customers weren't assigned to be one or the other). They find that ${s.g1} were ${s.metric1}, but ${s.metric2}. What should they conclude?`;
-    const options = [
-      `Being ${s.singularA} (rather than ${s.singularB}) causes people to spend more per purchase.`,
-      `Being ${s.singularA} is associated with spending more per purchase, but this comparison can't establish that it causes the difference — the two groups likely differ in other ways too (e.g., income, habits).`,
-      "The comparison proves that the same individuals would spend differently if you switched their group membership.",
-      "Nothing can be concluded because the two groups are different sizes.",
-    ];
-    return mkQuestion(
-      "causation",
-      stem,
-      options,
-      1,
-      "Because group membership here isn't randomly assigned — people naturally sort themselves into these groups — any pre-existing differences between the groups (income, shopping habits, demographics) are confounded with the grouping variable itself. The data show a real association, but not a causal one."
-    );
-  }
-
-  function q_causation_whatmatters() {
-    const stem = `A colleague asks: "What is the single most important design feature for being able to draw a causal conclusion from a study?" Which answer is best?`;
-    const options = [
-      "Random assignment of units (customers, stores, etc.) to treatment and control conditions, so the groups are equivalent on average except for the treatment.",
-      "Collecting as large a sample as possible, regardless of how people ended up in each group.",
-      "Making sure the correlation coefficient between treatment and outcome is above 0.5.",
-      "Running the study for as long as possible before analyzing the data.",
-    ];
-    return mkQuestion(
-      "causation",
-      stem,
-      options,
-      0,
-      "Random assignment is what makes the treatment and control groups comparable on both observed and unobserved factors, on average. Without it, any difference in outcomes could be explained by pre-existing differences between the groups rather than the treatment itself — no amount of sample size, a large correlation, or study duration substitutes for that."
-    );
-  }
-
-  function q_causation_coefficient() {
-    const r = randFloat(-0.85, 0.85, 2);
-    const strength = Math.abs(r) < 0.2 ? "very weak" : Math.abs(r) < 0.4 ? "weak" : Math.abs(r) < 0.6 ? "moderate" : Math.abs(r) < 0.8 ? "strong" : "very strong";
-    const direction = r > 0 ? "positive" : "negative";
-    const stem = `A dataset shows a correlation coefficient of r = ${r} between ad spend and weekly sales across stores. Which statement correctly interprets this number?`;
-    const options = [
-      `It indicates a ${strength} ${direction} linear association between the two variables — nothing more, and by itself it says nothing about whether one causes the other.`,
-      `It means ad spend explains ${Math.round(Math.abs(r) * 100)}% of the variation in sales.`,
-      "It proves that increasing ad spend will increase sales by that same proportion.",
-      "Correlation coefficients only have meaning if they come from a randomized experiment.",
-    ];
-    return mkQuestion(
-      "causation",
-      stem,
-      options,
-      0,
-      `r = ${r} describes the strength (${strength}) and direction (${direction}) of a linear association. It's r² (${(r * r).toFixed(2)}), not r, that relates to "variance explained" in a simple regression sense — and even that is a descriptive, not causal, statement. Correlation coefficients can be computed from observational OR experimental data; what matters for causal claims is the design, not the statistic itself.`
-    );
-  }
-
-  function q_causation_confound_multi() {
+  function q_a7_confound_multi() {
     const stem = `A firm observes a strong positive correlation between two variables and wants to know whether it can trust a causal story. Which of the following are legitimate reasons to be cautious about concluding causation from this correlation alone? (Select all that apply.)`;
     const options = [
       "A third, unmeasured variable could be driving both variables at once (a confound).",
       "The direction of causality could run the opposite way from what's assumed (reverse causality).",
-      "The units that ended up 'high' on one variable may have self-selected into it in a way that's related to the outcome (selection effect).",
+      "The units that ended up 'high' on one variable may have self-selected into it in a way that's related to the outcome (a selection effect).",
       "The correlation coefficient was positive rather than negative.",
       "The sample size was larger than 100.",
     ];
@@ -374,61 +298,114 @@
       stem,
       options,
       [0, 1, 2],
-      "Confounding, reverse causality, and self-selection are all genuine reasons a correlation might not reflect the assumed causal story. The sign of the correlation (positive vs. negative) and having a reasonably large sample size don't, by themselves, address any of these problems — confounds and selection effects can happen in large samples just as easily as small ones."
+      "Confounding, reverse causality, and selection effects are all genuine reasons a correlation might not reflect the assumed causal story. The sign of the correlation (positive vs. negative) and having a reasonably large sample size don't, by themselves, address any of these problems — confounds and selection effects can happen in large samples just as easily as small ones."
     );
   }
 
-  /* ============================ (b) Incrementality ======================== */
-
-  function q_incr_noholdout_confound() {
-    const company = pick(COMPANIES);
-    const channel = pick(CHANNELS);
-    const pct = randInt(10, 35);
-    const season = pick(["the holiday season", "back-to-school season", "a competitor's outage", "a broader market upswing"]);
-    const stem = `${company} ran ${article(channel)} ${asCampaign(channel)} all last month. Sales rose ${pct}% compared to the month before, which overlapped with ${season}. The team wants to claim the campaign caused an incremental ${pct}% increase in purchases. Can they conclude that?`;
+  function q_a8_whatmatters() {
+    const stem = `When consumer researchers conduct an experiment, which of the following is most important for them to be able to make a cause-and-effect claim?`;
     const options = [
-      `Yes — a ${pct}% increase after the campaign launched is clear evidence of incremental lift.`,
-      `No — without a comparison group that didn't see the campaign (a holdout), it's impossible to separate the campaign's effect from ${season} or other trends happening at the same time.`,
-      "Yes, but only if the campaign cost less than the extra revenue generated.",
-      "No, because sales figures can never be used to measure incrementality.",
+      "A diverse, representative sample of participants",
+      "Statistical controls (covariates)",
+      "Random assignment to the groups (e.g., seeing the A version vs. the B version)",
+      "A physical laboratory setting",
+    ];
+    return mkQuestion(
+      "causation",
+      stem,
+      options,
+      2,
+      "Random assignment is what makes the groups comparable on everything else, on average, so any later difference can be attributed to the treatment. A representative sample helps you generalize results, and statistical controls can help with some observational analyses — but neither one, on its own, licenses a causal claim the way random assignment does. Experiments don't need to happen in a physical lab, either — most real A/B tests run entirely online."
+    );
+  }
+
+  /* ============================================================
+     (b) Incrementality
+     ============================================================ */
+
+  function q_b1_sponsored_search_trap() {
+    const spend = randInt(5, 20) * 1000;
+    const roas = randFloat(2.2, 4, 1);
+    const revenue = Math.round((spend * roas) / 100) * 100;
+    const clicks = randInt(Math.round(spend / 1.2), Math.round(spend * 1.4));
+    const stem = `A company spends $${spend.toLocaleString()} on Google search ads. ${clicks.toLocaleString()} users click the ad and end up spending a total of $${revenue.toLocaleString()} on the website — a ${roas}x ROAS (return on ad spend). The marketing team celebrates a huge success. Here's the catch: when someone searches for this company's own brand name, the sponsored ad AND an organic (non-paid) listing for the very same product often both show up. If the company hadn't paid for the sponsored ad, what would most of those customers likely have done instead?`;
+    const options = [
+      "Left without buying anything, since they specifically wanted to click the sponsored ad.",
+      "Clicked the organic (non-paid) listing for the same product and bought it anyway.",
+      "Searched for a completely different, unrelated product.",
+      "There's no way to guess, so the 3x+ ROAS figure should be trusted at face value.",
     ];
     return mkQuestion(
       "incrementality",
       stem,
       options,
       1,
-      `A before/after comparison confounds the campaign with everything else that changed at the same time (here, ${season}). To measure true incrementality — the extra purchases caused by the campaign, above and beyond what would have happened anyway — you need a randomized holdout group that didn't receive the campaign, so you can compare "with" vs. "without" while everything else stays the same.`
+      `A high ROAS doesn't mean the ad was incremental. When someone is already searching for your exact brand name, they usually intend to buy from you regardless — many would have simply clicked the free organic listing for the same product and purchased anyway. That means a big chunk of the "$${revenue.toLocaleString()} in ad-driven sales" would likely have happened with $0 spent on that ad.`
     );
   }
 
-  function q_incr_highintent() {
-    const company = pick(COMPANIES);
-    const channel = pick(CHANNELS);
-    const stem = `${company} targets its ${channel} at customers who had already added items to their cart in the last hour. 40% of them purchase within a day. The team claims the campaign drove a 40-percentage-point incremental lift in purchases. What's the flaw in that reasoning?`;
+  function q_b2_newtonbaby() {
+    const stem = `A mattress company spent heavily on "branded search" ads — whenever someone searched "[Company] mattress," a sponsored ad for their product appeared first. Results looked great: lots of clicks and purchases, and revenue was higher than the ad spend. Remember: incremental sales = sales that wouldn't have happened without the ad. Did the ads cause an increase in INCREMENTAL sales?`;
     const options = [
-      "There's no flaw — any purchase after seeing an ad counts as incremental by definition.",
-      "Many of these high-intent customers would likely have purchased anyway even without the message, so the raw purchase rate overstates the campaign's incremental effect.",
-      "The flaw is that 40% is too low a number to be meaningful.",
-      "The flaw is that cart additions can't be tracked accurately.",
+      "Yes — since revenue was higher than ad spend, the ads clearly paid for themselves.",
+      "No — most people who clicked the ad were already specifically searching for this brand, so they likely would have bought the same product anyway (e.g., by clicking the free organic listing).",
+      "Yes, branded search ads always drive fully incremental sales since the customer already knows the brand.",
+      "There's no way to test whether ad spending like this is incremental.",
     ];
     return mkQuestion(
       "incrementality",
       stem,
       options,
       1,
-      "This is a classic incrementality trap: targeting people who are already very likely to convert makes the campaign look highly effective, but much of that 40% would have purchased with no message at all. The only way to know the true incremental effect is to compare this treated group's purchase rate to a similar, randomly-held-out group that didn't receive the message."
+      `This mirrors a real branded-search case: after a careful incrementality test (turning the ads off for some searches/regions and comparing), the company found almost none of the "ad-driven" sales were actually incremental — customers searching their own brand name would have bought anyway. Their conclusion: spend close to $0 on that kind of branded search.`
     );
   }
 
-  function q_incr_properholdout() {
+  function q_b3_freetrial() {
+    const company = pick(FITNESS_APPS);
+    const pct = randInt(8, 20);
+    const stem = `${company}, a subscription-based fitness app, adds a free-trial option in October. From November through January, the company's revenue increases ${pct}%. The marketing team concludes the free trial caused the revenue boost. Can they conclude that with confidence?`;
+    const options = [
+      `Yes — the revenue increase right after launching the free trial is clear evidence it worked.`,
+      `Not with full confidence — it's possible the free trial helped, but November–January also overlaps with the holiday season and New Year's resolutions (common times for fitness spending), so other explanations are just as plausible.`,
+      `No — free trials never increase long-term revenue.`,
+      `The comparison is meaningless because revenue can't be measured monthly.`,
+    ];
+    return mkQuestion(
+      "incrementality",
+      stem,
+      options,
+      1,
+      "A simple before/after comparison is confounded with everything else that changed over that same window — here, a season when fitness spending tends to rise anyway (holidays, New Year's resolutions). That means the free trial's effect is plausible but not confidently established either way from this comparison alone."
+    );
+  }
+
+  function q_b4_packers_email() {
+    const stem = `The marketing director for a sports team's pro shop analyzes customer data and finds that people who click on more of the team's promotional emails tend to make more purchases than people who click on fewer emails. Based on this, he concludes email campaigns are highly effective and decides to increase email frequency and budget. What's the flaw in that reasoning?`;
+    const options = [
+      "There's no flaw — this is solid evidence that emails drive purchases.",
+      "The customers who click on the most emails are probably the team's most engaged, loyal fans already — they may have made those purchases anyway, regardless of how many emails they got.",
+      "The flaw is that email marketing is cheaper than other channels, so the comparison isn't fair.",
+      "The flaw is that click rates can't be measured accurately.",
+    ]
+    return mkQuestion(
+      "incrementality",
+      stem,
+      options,
+      1,
+      "This is a self-selection trap: the customers most likely to click promotional emails are probably already the most engaged fans, who were likely to buy from the pro shop regardless of email volume. Sending more emails to already-loyal fans may not create much (or any) incremental purchasing — to know for sure, he'd want to test it (e.g., randomly increase email frequency for some fans and compare to a group whose frequency stays the same)."
+    );
+  }
+
+  function q_b5_comparisongroup() {
     const company = pick(COMPANIES);
     const channel = pick(CHANNELS);
     const treated = randFloat(6, 14, 1);
     const control = randFloat(4, treated - 0.5, 1);
-    const stem = `${company} randomly splits customers into two groups: one receives ${article(channel)} ${channel}, the other (a holdout) receives nothing. Purchase rate is ${treated}% in the treated group vs. ${control}% in the holdout, and the difference is statistically significant. What can the team conclude?`;
+    const stem = `${company} randomly splits customers into two groups: one receives ${article(channel)} ${channel}, the other (a comparison group that doesn't receive it) gets nothing. Purchase rate is ${treated}% in the group that got the campaign vs. ${control}% in the comparison group, and the difference is statistically significant. What can the team conclude?`;
     const options = [
       `This is good evidence that the ${channel} caused an incremental lift of about ${(treated - control).toFixed(1)} percentage points in purchase rate, since random assignment rules out the usual confounds.`,
-      "Nothing — a single holdout test is never sufficient to measure incrementality.",
+      "Nothing — a single test like this is never sufficient to measure incrementality.",
       "The campaign caused a lift, but the exact size can't be estimated from this kind of test.",
       "The result only shows correlation, not incrementality, because it wasn't a lab experiment.",
     ];
@@ -437,74 +414,122 @@
       stem,
       options,
       0,
-      `This is exactly the design that identifies incrementality: random assignment to "message" vs. "no message" (holdout) means the two groups are comparable on everything except the campaign, so the ${(treated - control).toFixed(1)}-point gap can be attributed to the campaign itself.`
+      `This is exactly the design that identifies incrementality: randomly assigning customers to "gets the campaign" vs. "doesn't" means the two groups are comparable on everything except the campaign, so the ${(treated - control).toFixed(1)}-point gap can be attributed to the campaign itself. (It doesn't need to be a lab experiment — this kind of randomized test runs entirely in the real world.)`
     );
   }
 
-  function q_incr_doublecounting() {
+  function q_b6_doublecounting() {
     const company = pick(COMPANIES);
-    const stem = `${company}'s marketing dashboard shows that email, retargeting ads, and search ads together are each "credited" with driving a customer's purchase — the same purchase shows up as attributed to all three channels. The team sums the attributed sales across channels to estimate total incremental impact. Why is this problematic?`;
+    const stem = `${company}'s marketing dashboard shows that email, retargeting ads, and search ads are each given credit for the same customer purchase — the same sale shows up as "caused by" all three channels at once. The team adds up the credited sales across all channels to estimate total impact. Why is this a problem?`;
     const options = [
-      "It isn't problematic — attribution systems always give an unbiased estimate of incrementality.",
-      "Multi-touch attribution credits every channel a customer touched, which can double- (or triple-) count the same sale and overstate each channel's true incremental contribution.",
-      "It's problematic only because email marketing is cheaper than the other channels.",
-      "It's problematic because attribution software can't track email opens.",
+      "It isn't a problem — if a channel gets credit for a sale, that sale really was caused by that channel.",
+      "Crediting the same sale to multiple channels at once means you're counting it more than once, which overstates how much each channel is really contributing — and it still doesn't tell you what would've happened without that channel.",
+      "It's a problem only because email marketing is the cheapest channel.",
+      "It's a problem because email opens can't be tracked.",
     ];
     return mkQuestion(
       "incrementality",
       stem,
       options,
       1,
-      "Standard attribution (credit given to every touchpoint a converter encountered) is not the same as incrementality (the causal lift from a channel). Summing attributed sales across channels routinely overstates total impact because the same sale gets counted multiple times, and it still doesn't tell you what would have happened without each channel — that requires holdouts or experiments."
+      "Giving \"credit\" to every channel a customer happened to encounter isn't the same as knowing which channel actually caused the sale. Adding up credited sales across channels routinely double- (or triple-) counts the same purchase and overstates total impact — and even for one channel alone, credit isn't the same as incrementality: that still requires comparing to what would've happened without it."
     );
   }
 
-  /* ============================ (c) Stats basics =========================== */
+  /* ============================================================
+     (c) P-values & Research Basics
+     ============================================================ */
 
-  function q_stats_pvalue_meaning() {
-    const p = randFloat(0.01, 0.049, 3);
-    const stem = `A study finds p = ${p} for the effect of a new checkout design on conversion. Which is the correct interpretation of this p-value?`;
+  function q_c1_coinflip() {
+    const tiers = [
+      { h: 48, t: 52, verdict: 0 },
+      { h: 52, t: 48, verdict: 0 },
+      { h: 41, t: 59, verdict: 1 },
+      { h: 59, t: 41, verdict: 1 },
+      { h: 25, t: 75, verdict: 2 },
+      { h: 75, t: 25, verdict: 2 },
+    ];
+    const tier = pick(tiers);
+    const stem = `You flip a coin 100 times and get ${tier.h} heads and ${tier.t} tails. What should you conclude?`;
     const options = [
-      `Assuming there truly is no effect (the null hypothesis), the probability of observing a result at least this extreme is ${p}.`,
-      `There is a ${(1 - p).toFixed(2) * 100}% probability that the new checkout design actually works.`,
-      `There is only a ${(p * 100).toFixed(1)}% probability that the null hypothesis is true.`,
-      "It means the effect size is small and probably not worth caring about.",
+      "This is close enough to a 50/50 split that it's easily explained by random chance alone — no real reason to suspect the coin is unfair.",
+      "This is somewhat unusual, but still not quite strong enough evidence to confidently say the coin is unfair.",
+      "This result would be extremely unlikely to happen by chance with a fair coin — strong evidence the coin isn't fair.",
+      "There's no way to draw any conclusion without flipping it many more times first.",
+    ];
+    const explanations = [
+      "A split this close to 50/50 happens all the time with a perfectly fair coin — nothing suspicious here.",
+      'A split this far from 50/50 is unusual — about like the lecture\'s example where a 59/41 split only happens by chance around 7% of the time — but that\'s still not rare enough to be confident the coin is rigged.',
+      "A split this extreme (about like 75/25) would almost never happen with a fair coin — under a 1-in-10,000 chance — so you can be very confident something's off.",
+    ];
+    return mkQuestion("stats", stem, options, tier.verdict, explanations[tier.verdict]);
+  }
+
+  function q_c2_samplesize() {
+    const branch = pick(["samplesize", "effectsize"]);
+    if (branch === "samplesize") {
+      const stem = `A randomized trial compares a new medication to a placebo. In one version of the study, 50% of the treatment group and 40% of the placebo group are healed (the same 10-percentage-point gap) — but the study only has 20 people. In another version, the same 10-point gap (50% vs. 40%) shows up with 2,000 people. Which version gives you more confidence the treatment actually works, and why?`;
+      const options = [
+        "The 20-person version — smaller studies are always more trustworthy.",
+        "The 2,000-person version — with more people, the same 10-point gap is far less likely to just be random variation.",
+        "Both equally — sample size doesn't matter if the percentage difference is the same either way.",
+        "Neither — you can never trust a placebo-controlled study.",
+      ];
+      return mkQuestion(
+        "stats",
+        stem,
+        options,
+        1,
+        "The same-sized gap (10 points) is much more convincing with more people. With only 20 participants, a 10-point gap could easily happen just from random luck in who got assigned to which group. With 2,000 people, that same gap is very unlikely to be random chance — this is exactly your class's example (20 people: p = .47, inconclusive; 2,000 people: p < .001, confident it's real)."
+      );
+    } else {
+      const stem = `A randomized trial with 2,000 people compares a new medication to a placebo. In one version, 50% of the treatment group is healed vs. 40% of the placebo group (a 10-point gap). In another version with the same 2,000 people, it's 42% vs. 40% (only a 2-point gap). Which version lets you confidently say the treatment works?`;
+      const options = [
+        "Only the 10-point-gap version — even with a big sample, a very small effect can still be hard to distinguish from random noise.",
+        "Only the 2-point-gap version — smaller effects are always easier to detect.",
+        "Both equally — sample size is all that matters, not the size of the effect.",
+        "Neither — 2,000 people is never enough for a medical study.",
+      ];
+      return mkQuestion(
+        "stats",
+        stem,
+        options,
+        0,
+        "Sample size isn't the only thing that matters — the size of the effect matters too. With 2,000 people, a 10-point gap is easy to distinguish from random noise (p < .001), but a tiny 2-point gap can still be inconclusive (about p = .19 in your class's example) even with a large sample, because small effects are harder to tell apart from chance."
+      );
+    }
+  }
+
+  function q_c3_pvalue_meaning() {
+    const p = pick([0.01, 0.02, 0.03, 0.04]);
+    const stem = `A study finds p = ${p} for whether a new ad increases clicks. What does this p-value mean?`;
+    const options = [
+      `An estimate of the probability that a result this extreme (or more extreme) would happen just by random chance alone, if the ad actually had no real effect.`,
+      `There's a ${(p * 100).toFixed(0)}% chance the ad has no effect.`,
+      `The ad increases clicks by ${(p * 100).toFixed(0)}%.`,
+      `The result isn't important, since ${p} is a small number.`,
     ];
     return mkQuestion(
       "stats",
       stem,
       options,
       0,
-      "A p-value is the probability of seeing data this extreme (or more) if the null hypothesis were true — it is not the probability that the null (or the alternative) hypothesis is true, and it says nothing directly about effect size or practical importance."
+      `A p-value estimates how likely a result like this would be from random chance alone, if the change you made didn't really do anything. It is not the probability that the ad "has no effect," and it doesn't tell you the size of the effect — small p-values usually mean you can be confident something real is going on, not that the effect itself is large or small.`
     );
   }
 
-  function q_stats_correlation_strength() {
-    const rs = shuffle([randFloat(0.02, 0.15, 2), randFloat(0.4, 0.55, 2), randFloat(0.75, 0.95, 2)]);
-    const stem = `Which of these correlation coefficients reflects the strongest linear relationship between two variables?`;
-    const options = rs.map((r) => `r = ${r}`);
-    const correctIdx = rs.indexOf(Math.max(...rs.map((r) => Math.abs(r))));
-    return mkQuestion(
-      "stats",
-      stem,
-      options,
-      correctIdx,
-      "Strength of a linear relationship is judged by the absolute value of r (how far from 0, toward ±1), not by its sign. The value closest to ±1 here reflects the strongest association."
-    );
-  }
-
-  function q_stats_basic_vs_applied() {
+  function q_c4_basicvsapplied() {
     const scenarios = [
-      { text: "A university lab studies whether scarcity cues generally increase perceived product value, across many unrelated product categories, to build a general theory of consumer psychology.", answer: "basic" },
-      { text: "A consulting team tests whether adding a 'only 3 left in stock' label increases conversion on one specific retailer's product pages this quarter.", answer: "applied" },
-      { text: "Researchers investigate the general cognitive mechanism behind why people anchor on the first price they see, without reference to any specific company.", answer: "basic" },
-      { text: "A brand's internal analytics team evaluates whether their new loyalty tier increased that brand's customer retention.", answer: "applied" },
+      { text: "Researchers examine whether ads and products featuring celebrity endorsements generally attract more attention and purchases, across many unrelated brands and product categories.", answer: "basic" },
+      { text: 'Diet Coke\'s marketing team tests whether their ads featuring Taylor Swift attract more attention and purchases than their other ads.', answer: "applied" },
+      { text: "A researcher uses eye-tracking glasses to study which steps people generally go through when making a purchase decision — do people usually look at price first, or brand name first?", answer: "basic" },
+      { text: "A marketing director at Kellogg's wants to know which cereal box design causes people to be more likely to notice the non-GMO label.", answer: "applied" },
     ];
     const s = pick(scenarios);
-    const stem = `Is the following best described as basic (fundamental) research or applied research in consumer behavior/marketing? "${s.text}"`;
+    const stem = `Is the following best described as basic (fundamental) research or applied research? "${s.text}"`;
     const options = [
-      "Basic research — it's aimed at building general, theory-level knowledge rather than solving one company's specific decision.",
-      "Applied research — it's aimed at answering a specific, practical business question for a particular firm or context.",
+      "Basic research — it's aimed at understanding a general relationship, not one company's specific decision.",
+      "Applied research — it's aimed at answering a specific, practical question for a particular company or context.",
     ];
     const correctIdx = s.answer === "basic" ? 0 : 1;
     return mkQuestion(
@@ -513,19 +538,19 @@
       options,
       correctIdx,
       s.answer === "basic"
-        ? "Basic research aims to build generalizable theory or understanding (e.g., how a psychological mechanism works broadly), without necessarily targeting a specific firm's decision."
-        : "Applied research is designed to answer a specific, practical decision for a particular organization or context, using research methods to guide action rather than build general theory."
+        ? "Basic research aims to understand a general relationship or mechanism, without targeting one specific company's decision — even if the topic (like celebrity endorsements) is obviously relevant to marketing."
+        : "Applied research is aimed at a specific, practical decision for a particular company or context, rather than building a general theory."
     );
   }
 
-  function q_stats_nonsignificant() {
+  function q_c5_nonsignificant() {
     const p = randFloat(0.11, 0.68, 2);
     const company = pick(COMPANIES);
     const stem = `${company} tests a new email subject line against the old one and finds a small difference in open rates, but p = ${p} (not statistically significant). Which is the most appropriate interpretation?`;
     const options = [
       "This proves the new subject line has zero effect on open rates.",
-      "This means the study should be thrown out entirely — non-significant results are never informative.",
-      "The evidence isn't strong enough to conclude there's a real difference; the true effect could be zero, small, or the study may simply lack the power (e.g., sample size) to detect it.",
+      "This means the test should be thrown out entirely — a non-significant result is never informative.",
+      "The evidence isn't strong enough to conclude there's a real difference — it could be that there's no real effect, a small effect, or that they simply need more data/a bigger sample to tell for sure.",
       "It means the effect is definitely real but just too small to matter practically.",
     ];
     return mkQuestion(
@@ -533,178 +558,214 @@
       stem,
       options,
       2,
-      `A non-significant result (p = ${p}) means we can't confidently rule out "no effect" — it is NOT proof that there is no effect. Absence of evidence isn't evidence of absence, especially with limited sample sizes; the honest conclusion is "inconclusive," not "no effect" or "definitely a real but small effect."`
+      `A non-significant result (p = ${p}) means we can't confidently rule out "no real difference" — it is NOT proof that there is no effect. The honest conclusion is "inconclusive, possibly needs more data," not "no effect" or "definitely a real but small effect."`
     );
   }
 
-  function q_stats_ci_or_significance() {
-    const company = pick(COMPANIES);
-    const lift = randFloat(1.5, 6, 1);
-    const stem = `${company} reports that a redesign increased conversion by ${lift} percentage points, with a 95% confidence interval of [-0.8, ${(lift * 2 + 0.8).toFixed(1)}]. What should the team conclude?`;
-    const options = [
-      `Because the interval includes 0, the estimate is quite uncertain — the data are consistent with anywhere from a small negative effect to a fairly large positive one, so treat the ${lift}-point estimate cautiously.`,
-      `The team should confidently report a guaranteed ${lift}-point lift going forward.`,
-      "A confidence interval that includes negative numbers means the test was run incorrectly.",
-      "Confidence intervals are irrelevant if you already have a point estimate.",
-    ];
-    return mkQuestion(
-      "stats",
-      stem,
-      options,
-      0,
-      "A wide confidence interval that straddles zero signals a lot of uncertainty in the estimate — the true effect could plausibly be slightly negative or considerably positive. The point estimate alone (without considering the interval) overstates how precisely we know the effect."
-    );
-  }
+  /* ============================================================
+     (d) Random Assignment, A/B Tests & Cluster Randomization
+     ============================================================ */
 
-  /* ============ (d) Random Assignment Logic, Gold-Standard Experiments & A/B Tests === */
-
-  function q_gold_why_rct() {
-    const stem = `Why are randomized controlled experiments considered the "gold standard" for establishing causality in consumer behavior and marketing research?`;
+  function q_d1_why_random() {
+    const stem = `Why is random assignment considered the "gold standard" for showing cause and effect?`;
     const options = [
-      "Random assignment makes treatment and control groups statistically equivalent, on average, on both observed and unobserved factors — so any outcome difference can be attributed to the treatment.",
-      "They are the cheapest and fastest type of study to run.",
-      "They always produce statistically significant results.",
-      "They eliminate the need for a control group entirely.",
+      "It makes the two groups as similar as possible before the study starts, so any difference that shows up afterward can be attributed to whatever you changed between the groups.",
+      "It's the cheapest and fastest type of study to run.",
+      "It always produces a statistically significant result.",
+      "It means you don't need a control/comparison group at all.",
     ];
     return mkQuestion(
       "goldstandard",
       stem,
       options,
       0,
-      "The power of random assignment is that it balances *all* other factors (known and unknown) between groups on average — that's what lets us attribute outcome differences to the treatment rather than pre-existing differences. It has nothing to do with cost, speed, or guaranteeing significance."
+      "Random assignment means the groups start out equal (on average) on everything else — age, habits, preferences, all of it — known or unknown. That's what lets you attribute any later difference to the one thing you changed. It has nothing to do with cost, speed, or guaranteeing a significant result."
     );
   }
 
-  function q_gold_why_prepost_fails() {
-    const stem = `A researcher wants to explain, in general terms, why a simple "before vs. after" (pre/post) comparison is weaker evidence of causation than a randomized experiment. What's the core reason?`;
+  function q_d2_representative_sample_trap() {
+    const stem = `Research is conducted on a very large, diverse, and nationally representative group of participants. Researchers randomly assign each participant to either a treatment group (drink caffeinated coffee) or a control group (drink a decaf placebo that tastes the same). People in the caffeine group complete an exam significantly faster than people in the control group. What can the researchers conclude?`;
     const options = [
-      "Pre/post designs compare the same group to itself at two different times, so anything else that changed over that same period (trends, seasonality, other initiatives) is confounded with the treatment — there's no comparison group that shows what would have happened without the treatment.",
-      "Pre/post designs always use smaller sample sizes than experiments.",
-      "Pre/post designs are weaker only because they don't use p-values.",
-      "There's no real difference in strength between pre/post designs and randomized experiments — both allow the same causal confidence.",
+      "They can claim the caffeine caused people to complete the exam faster.",
+      "They cannot claim causation, because a study like this is always correlational.",
+      "They can only claim causation because the sample was so large and representative.",
+      "They cannot claim causation unless the sample includes at least 100,000 people.",
     ];
     return mkQuestion(
       "goldstandard",
       stem,
       options,
       0,
-      "Randomized experiments work by comparing two groups that are, on average, identical except for the treatment — so the control group tells you what would have happened without it (the 'counterfactual'). A pre/post design has no such comparison group: it can't distinguish the treatment's effect from anything else that changed over time, like seasonality or a broader trend."
+      "The random assignment is what licenses the causal claim here — not the sample being large, diverse, or nationally representative. A representative sample is valuable for a different reason (it helps the results generalize to more people), but it's not what makes a study causal. Even a small, non-representative study can support a causal claim if it uses random assignment."
     );
   }
 
-  function q_gold_abtest_recognize() {
-    const setups = [
-      { co: "an e-commerce site", change: `a "12 people have this in their cart" message added to product pages`, metric: "purchase rate" },
-      { co: "a subscription company", change: 'the annual plan\'s price displayed as "$10/month" instead of "$120/year"', metric: "sign-up rate" },
-      { co: "an online retailer", change: 'a second "Buy Now" button added alongside the existing "Add to Cart" button', metric: "purchase rate" },
-      { co: "a food-delivery app", change: "the estimated delivery time shown before checkout instead of after", metric: "order completion rate" },
-    ];
-    const s = pick(setups);
-    const lift = randInt(4, 18);
-    const stem = `${cap(s.co)} runs a true A/B test: incoming visitors are randomly assigned to see the current version of the page or a new version featuring ${s.change}. The group that saw the new version had a ${lift}% higher ${s.metric}, and the difference was statistically significant. What should they conclude?`;
+  function q_d3_identify_abtest() {
+    const stem = `Which of the following is an example of a true A/B test?`;
     const options = [
-      `The change caused the increase in ${s.metric} — random assignment to the two versions makes this a valid causal comparison, just like a lab experiment.`,
-      "The change is only correlated with the increase, because A/B tests run on a website can never support causal claims the way a 'real' experiment can.",
-      "Nothing can be concluded without also running a focus group to confirm the result.",
-      `The ${lift}% figure can't be trusted unless the test ran for at least a full calendar year.`,
+      "A social media platform notices users retweet articles without reading them. They add a pop-up asking users if they want to read the article first, then compare click and retweet rates from before vs. after adding the pop-up.",
+      "A retailer measures the correlation between how much time users spend on the website and how much they spend.",
+      "A travel site designs a blue vs. a black \"add to cart\" button; for one week, visitors are randomly assigned to see one version or the other.",
+      "A travel site shows both an \"add to cart\" button and a \"buy now\" button to every single visitor at the same time.",
+    ];
+    return mkQuestion(
+      "goldstandard",
+      stem,
+      options,
+      2,
+      'Only the third option involves random assignment to two different versions at the same time — that\'s what makes it a true A/B test. The first is a before/after comparison (no random assignment, no comparison group at the same time). The second is just a correlation, not a test of anything. The fourth shows everyone the same page (both buttons) rather than randomly splitting visitors between two different versions.'
+    );
+  }
+
+  function q_d4_how_abtests_work() {
+    const badgeA = pick(["Best Value", "Top Rated", "Editor's Pick"]);
+    const badgeB = pick(["Popular Pick", "Best Seller", "Trending Now"]);
+    const stem = `On a retailer's website, two versions of a product page are tested — one badge says "${badgeA}" and the other says "${badgeB}," with everything else identical. How do large-scale online A/B tests like this typically work?`;
+    const options = [
+      "Each visitor is randomly assigned a number when they arrive, which determines which version they see (often reflected in a part of the page's URL) — and usually just one thing differs between the versions.",
+      "Visitors are shown a menu and get to pick which version of the page they'd like to see.",
+      "The company shows the new version to everyone at once, then compares this month's numbers to last month's.",
+      "An employee manually decides, one visitor at a time, which version each person should see.",
     ];
     return mkQuestion(
       "goldstandard",
       stem,
       options,
       0,
-      "A well-run A/B test IS a randomized controlled experiment — visitors are randomly assigned to versions, which balances the groups on everything except the change being tested. There's nothing inherently 'less valid' about causal claims from a properly randomized online test compared to an offline lab experiment; what matters is the random assignment, not the setting."
+      "Real digital A/B tests assign each visitor to a version automatically and randomly (often via a random number tied to that visit, sometimes visible in the URL), and usually change only one thing at a time so any difference in outcomes can be traced to that one change."
     );
   }
 
-  function q_gold_pricing_framing() {
-    const stem = `A subscription company wants to know whether displaying its annual plan as "$10/month" (billed annually) instead of "$120/year" changes sign-up rates — a form of price framing. What is the best way to test this causally?`;
-    const options = [
-      "Randomly assign visitors to see one framing or the other (an A/B test) and compare sign-up rates between the two groups.",
-      "Show the new framing to everyone for a month, then compare that month's sign-up rate to the previous month's.",
-      "Ask a focus group which framing they personally prefer.",
-      "Look at whether sign-up rate is correlated with how long each visitor spent on the pricing page.",
-    ];
-    return mkQuestion(
-      "goldstandard",
-      stem,
-      options,
-      0,
-      "Whenever it's operationally possible to randomly assign who sees which version, an A/B test is the strongest way to isolate the causal effect of a specific design choice like price framing — it avoids the seasonality/trend confounds of a before/after rollout and the stated-vs-actual-behavior gap of a focus group."
-    );
-  }
-
-  function q_gold_cluster_randomization() {
+  function q_d5_cluster_rationale() {
+    const scenario = pick(["tv", "store"]);
     const [plural, singular] = pick(REGIONS);
     const company = pick(COMPANIES);
-    const stem = `${company} wants to test a new ad campaign but can't show different ads to individual people who live in the same media market (they'd see each other's ads / it's logistically impossible to target that granularly). What's the best way to get closer to a true experiment?`;
-    const options = [
-      `Randomly assign entire ${plural} to either "gets the new campaign" or "gets the old/no campaign," then compare outcomes across ${plural} rather than individuals.`,
-      "Give up on experimentation and just use whichever result the team already expected.",
-      "Let each individual self-select into seeing the new campaign or not, based on their preference.",
-      `Show the new campaign only in the single ${singular} with the highest existing sales.`,
-    ];
-    return mkQuestion(
-      "goldstandard",
-      stem,
-      options,
-      0,
-      `When you can't randomize individuals, cluster (or "geo") randomization — randomly assigning groups such as ${plural} to treatment vs. control — is the standard way to get much closer to the gold standard. It preserves random assignment (at the cluster level) while respecting practical constraints on targeting.`
-    );
+    if (scenario === "tv") {
+      const stem = `${company} wants to test whether a new TV ad increases sales. The problem: neighbors who live near each other and watch the same local channels would likely see the same version of the ad no matter what, so you can't randomly assign individual people to see different TV ads. What's the solution?`;
+      const options = [
+        `Randomly assign entire ${plural} to either "gets the new TV ad" or "gets the old ad," then compare sales across ${plural} instead of individuals.`,
+        "Give up on testing the TV ad's effect entirely.",
+        `Let each ${singular} choose for itself which ad to air.`,
+        "Only test the new ad in the single best-performing region.",
+      ];
+      return mkQuestion(
+        "goldstandard",
+        stem,
+        options,
+        0,
+        `When you can't randomize individuals, cluster (or "geo") randomization — randomly assigning groups like ${plural} to different versions — is the standard workaround. It preserves random assignment at the cluster level while respecting the reality that everyone in a media market sees the same TV ad.`
+      );
+    } else {
+      const stem = `${company} wants to test a new store layout. You can randomly assign which stores get the new layout — but you obviously can't show two different layouts to two different customers shopping in the same store at the same time. What's the solution?`;
+      const options = [
+        "Randomly assign entire stores to either the new layout or the old layout, then compare sales across stores.",
+        "Randomly assign individual customers within the same store to see different layouts simultaneously.",
+        "Give up on testing the layout change.",
+        "Only roll out the new layout in the single highest-traffic store.",
+      ];
+      return mkQuestion(
+        "goldstandard",
+        stem,
+        options,
+        0,
+        "This is cluster randomization at the store level: since you can't split customers within one physical store into different layout conditions at the same time, you randomly assign whole stores instead, and compare outcomes across stores."
+      );
+    }
   }
 
-  function q_gold_seasonality() {
-    const company = pick(COMPANIES);
-    const stem = `${company} can't randomly assign customers to a new pricing strategy, so they compare sales in the month after the change to the month before. A savvy analyst warns this comparison could be misleading. What should they do to strengthen the design, short of a true randomized experiment?`;
+  function q_d6_enough_clusters() {
+    const stem = `A company's customers are all in Texas and Oklahoma. Someone suggests: randomly assign Texas to see a new TV ad and Oklahoma to keep the old one, then compare sales. Is this a good test?`;
     const options = [
-      "Nothing further is needed — before/after comparisons are just as strong as randomized experiments.",
-      "Compare the treated group's change over time to a similar, untreated comparison group's change over the same period (a difference-in-differences approach), to net out seasonality and general time trends.",
-      "Only compare sales from the exact same single day in each month, since that's sufficient to remove any trend.",
-      "Switch to reporting correlation coefficients instead of comparing means.",
+      "Yes — since each state was randomly assigned to a version, this is a valid cluster-randomized experiment.",
+      "No — with only 2 clusters (1 state each), the states can already differ from each other in important ways (for example, a very different % of people living in big cities), so any sales difference might just reflect those pre-existing differences rather than the ad. You'd want many smaller clusters (like zip codes) instead.",
+      "No — geographic regions should never be used as clusters in an experiment.",
+      "No — TV ads can never be tested with an experiment.",
     ];
     return mkQuestion(
       "goldstandard",
       stem,
       options,
       1,
-      "When true randomization isn't possible, a common way to get closer to a causal estimate is a difference-in-differences design: track a comparable untreated group over the same period and subtract out its change (which captures seasonality/trends) from the treated group's change. This helps isolate the effect of the treatment itself from broader time trends."
+      "Random assignment only balances the groups on average when there are enough units being assigned. With just 2 clusters, there's no averaging out — whichever pre-existing differences Texas and Oklahoma happen to have (like urban vs. rural mix) stay entirely confounded with the ad version. Cluster randomization needs many clusters (e.g., hundreds of zip codes) to actually deliver on the promise of random assignment."
     );
   }
 
-  function q_gold_matching() {
-    const [plural, singular] = pick(REGIONS);
-    const company = pick(COMPANIES);
-    const stem = `${company} rolls out a promotion in a handful of ${plural} chosen by the sales team (not randomly) because of budget constraints. To estimate the promotion's causal effect more credibly than a simple before/after look, what's a reasonable next-best approach?`;
+  function q_d7_headstart_lottery() {
+    const stem = `If you wanted to know whether Head Start (an early-childhood program) CAUSES improved elementary school grades, what could you do to test this?`;
     const options = [
-      "Compare the treated " + singular + "s only to national averages from a completely different time period with no other adjustment.",
-      `Find a matched comparison group of similar, untreated ${plural} (similar size, demographics, and pre-trend sales) to serve as a synthetic control, and compare how outcomes diverge after the promotion starts.`,
-      "Assume the promotion had no effect since it wasn't randomly assigned.",
-      "Only look at the single best-performing " + singular + " and generalize from it.",
+      "Find a group of parents who want their kids to enroll in Head Start, but only randomly select half of them (through a lottery) to actually get in. Years later, compare the grades of the randomly-selected group to the grades of the not-selected group.",
+      "Analyze the correlation between Head Start enrollment and elementary school grades.",
+      "Find a large group of kids whose parents enrolled them in Head Start and a large group whose parents never enrolled them, then compare grades years later.",
+      "All of the above would work equally well for testing whether Head Start causes higher grades.",
     ];
     return mkQuestion(
       "goldstandard",
       stem,
       options,
-      1,
-      `Matching or "synthetic control" methods try to construct a credible comparison group out of untreated ${plural} that looked similar to the treated ones beforehand. It's not as strong as true random assignment, but it's a well-established way to get closer to a causal estimate when randomization isn't feasible.`
+      0,
+      "A random lottery among interested families is a natural experiment: it creates a truly random split between kids who get into the program and kids who don't, among families who were equally interested in enrolling. That removes the selection bias that would otherwise confound a simple correlation or an enrolled-vs.-not-enrolled comparison, where the families who choose (and manage) to enroll likely differ from those who don't."
     );
   }
 
-  function q_gold_which_designs_multi() {
-    const stem = `Which of the following research designs usually allow researchers to make confident cause-and-effect claims? (Select all that apply.)`;
-    const options = ["Observational (naturally occurring) data with no manipulation", "A randomized controlled experiment", "A true A/B test with random assignment", "A focus group", "A correlational study with a few statistical controls added"];
+  function q_d8_google_flights() {
+    const stem = `A researcher at a flight-search website studies whether changing how flights are sorted (Design A: cheapest first; Design B: popularity/direct-flights first) changes which flights people book. Study 1: they compare bookings from before vs. after switching every user over to Design B, and find people book pricier flights after the switch. Study 2: they randomly assign users to see Design A or Design B at the same time (a true A/B test), and find people book pricier flights under Design B. Which study (or studies) support a causal conclusion?`;
+    const options = ["Study 1 only", "Study 2 only", "Both studies equally", "Neither study"];
+    return mkQuestion(
+      "goldstandard",
+      stem,
+      options,
+      1,
+      "Study 2 is a true randomized A/B test — users are randomly split between designs at the same time, so any booking difference can be attributed to the design change. Study 1 is a before/after comparison with no random assignment and no group seeing Design A at the same time as Design B, so it's confounded with anything else that changed over that period (trends, seasonality, who happened to be searching that week)."
+    );
+  }
+
+  function q_d9_airbnb() {
+    const stem = `Airbnb ran an experiment: users were randomly assigned to see either a homepage with more expensive options (Group A) or a homepage with cheaper, more affordable options (Group B). Everything else on the page was identical across groups. Airbnb found that people in Group A (expensive options) were much more likely to leave the website without clicking on anything. What should they conclude?`;
+    const options = ["Displaying the more expensive options caused more people to leave without clicking on anything.", "Displaying the expensive options was correlated with leaving without clicking, but likely didn't cause it.", "None of the above."];
+    return mkQuestion(
+      "goldstandard",
+      stem,
+      options,
+      0,
+      "Because users were randomly assigned to Group A or Group B, the two groups should have started out equivalent on average — so the difference in exit rates can be attributed to the one thing that differed: which set of options they saw. This licenses a causal claim."
+    );
+  }
+
+  function q_d10_which_designs_multi() {
+    const stem = `Which of the following research designs usually let you make a confident cause-and-effect claim? (Select all that apply.)`;
+    const options = ["A randomized controlled experiment (RCT)", "A true A/B test", "A cluster-randomized experiment", "An observational or correlational study", "A focus group", "A case study"];
     return mkMultiQuestion(
       "goldstandard",
       stem,
       options,
-      [1, 2],
-      "Randomized controlled experiments and true A/B tests both rely on random assignment, which is what supports a confident causal claim. Observational data, focus groups, and correlational studies with 'a few controls' can all be genuinely useful — but none of them can rule out confounding, selection, or reverse causality the way random assignment does."
+      [0, 1, 2],
+      "RCTs, A/B tests, and cluster-randomized experiments all rely on random assignment, which is what supports a confident causal claim. Observational/correlational studies, focus groups, and case studies can all be genuinely useful for other purposes — generating ideas, describing a sample, exploring a single case in depth — but none of them use random assignment, so none of them can rule out confounds, selection effects, or reverse causality the way an experiment can."
     );
   }
 
-  /* ============================ (e) Applied scenarios ======================= */
+  /* ============================================================
+     (e) Applied Business Scenarios
+     ============================================================ */
 
-  function q_applied_webpage() {
+  function q_e1_cmo_multi() {
+    const stem = `You're hired as a marketing director at a company that previously only looked at ad effectiveness by correlating monthly ad spending with monthly sales. Now they want to know whether a new digital ad is more effective at increasing clicks/sales than an old one. The company advertises across many states and has many different products. Which of the following would give real causal evidence about whether the new ad works better? (Select all that apply.)`;
+    const options = [
+      "Randomly assign website visitors to see the new ad or the old ad (a true A/B test) and compare clicks/sales between the two groups.",
+      "Randomly assign which states get the new ad vs. the old ad (cluster randomization) and compare sales across states.",
+      "Randomly assign which products get promoted with the new ad vs. the old ad and compare sales of those products.",
+      "Keep computing the correlation between monthly ad spending and monthly sales, just with more months of data.",
+      "Ask a focus group which ad they personally find more appealing.",
+    ];
+    return mkMultiQuestion(
+      "applied",
+      stem,
+      options,
+      [0, 1, 2],
+      "All three randomization approaches — by visitor, by state, or by product — create a real comparison group and isolate the ad's effect from everything else going on. Simply gathering more months of correlational data doesn't fix the underlying confounding problem, no matter how much data you add, and a focus group tells you what people say they prefer, not what actually changes their behavior."
+    );
+  }
+
+  function q_e2_webpage() {
     const company = pick(COMPANIES);
     const change = pick(["a new checkout button color", "a redesigned product page layout", "a shorter sign-up form", "a new homepage hero image"]);
     const stem = `${company}'s product team wants to know whether ${change} actually increases conversion, and they can implement it however they like. What is the best way to answer this causally?`;
@@ -723,45 +784,27 @@
     );
   }
 
-  function q_applied_national_campaign() {
+  function q_e3_after_the_fact() {
     const company = pick(COMPANIES);
-    const stem = `${company} already ran a national ad campaign everywhere at once with no holdout group, and now leadership wants to know its true incremental ROI. What's the best recommendation going forward?`;
+    const stem = `${company} already ran a marketing campaign to all of its customers at once, with no comparison group. Now leadership wants to know its true incremental impact on sales — similar to a real branded-search case where a company only found out afterward that its "successful" campaign wasn't actually incremental. Can they cleanly figure out the true incremental impact after the fact?`;
     const options = [
-      `Accept that the incremental ROI of the past campaign can't be cleanly estimated, and design the next campaign with a randomized (or geo-based cluster-randomized) holdout group from the start.`,
-      "Estimate ROI by comparing sales during the campaign to sales in the same country the previous year, treating any difference as the campaign's effect.",
-      "Survey customers and ask them whether the ads influenced their purchase.",
-      "There's no way to ever measure incremental ROI for ad campaigns, so stop trying.",
-    ];
-    return mkQuestion(
-      "applied",
-      stem,
-      options,
-      0,
-      "Once a campaign has already run everywhere with no comparison group, there's no clean way to retroactively isolate its incremental effect from everything else going on at the same time. The right fix is forward-looking: build a holdout (ideally randomized, or geo/cluster-randomized if individual-level isn't feasible) into the next campaign."
-    );
-  }
-
-  function q_applied_observational_bias() {
-    const company = pick(COMPANIES);
-    const stem = `${company} notices that customers who organically saw a competitor-comparison page before buying spent 25% more than those who didn't. Leadership wants to feature that page more prominently to "cause" higher spending. What should a careful analyst point out first?`;
-    const options = [
-      "Nothing — a 25% gap is decisive evidence to act on immediately.",
-      "Customers who sought out a comparison page on their own may already be more deliberate, higher-intent shoppers, so the comparison confounds page-viewing with customer type; a randomized test of showing/hiding the page would give a cleaner answer.",
-      "The number is meaningless unless it's converted into a p-value first.",
-      "The finding should be ignored entirely because observational data is always useless.",
+      "Yes — just compare sales during the campaign to sales the month before.",
+      "Not cleanly — since everyone received the campaign at the same time, there's no comparison group showing what would have happened without it. Going forward, they should build in a comparison group (or randomly hold out some customers/regions) to measure incremental impact properly.",
+      "Yes — as long as revenue was higher than the campaign's cost, it was incremental.",
+      "There's no way to ever measure incremental impact for any campaign.",
     ];
     return mkQuestion(
       "applied",
       stem,
       options,
       1,
-      "This is a self-selection story: the type of customer who seeks out a comparison page likely differs from those who don't, independent of the page's causal effect. The fix isn't to ignore the data, but to test it properly — e.g., randomly showing or hiding the page (or its prominence) and comparing outcomes."
+      "Once a campaign has already run for everyone with no comparison group, there's no clean way to retroactively separate its effect from everything else happening at the same time. The fix is forward-looking: build a randomized comparison group (or a cluster-randomized holdout by region) into the next campaign from the start."
     );
   }
 
-  function q_applied_pick_method() {
+  function q_e4_pick_method() {
     const company = pick(COMPANIES);
-    const stem = `${company}'s CMO asks: "Did our new customer-service chatbot actually improve satisfaction, or would satisfaction have improved anyway?" The company can randomly route some incoming chats to the old human-only flow and some to the new chatbot flow. What should the analytics team recommend?`;
+    const stem = `${company}'s marketing director asks: "Did our new customer-service chatbot actually improve satisfaction, or would satisfaction have improved anyway?" The company can randomly route some incoming chats to the old human-only flow and some to the new chatbot flow. What should the analytics team recommend?`;
     const options = [
       "Randomly assign incoming chats to chatbot vs. human-only, and compare satisfaction outcomes between the two — the ability to randomize here makes this the strongest option available.",
       "Just compare satisfaction scores from before the chatbot launched to scores after, since that's simpler to compute.",
@@ -777,142 +820,130 @@
     );
   }
 
-  function q_applied_two_ways_better() {
-    const company = pick(COMPANIES);
-    const stem = `${company}'s marketing director measures monthly sales and monthly advertising spend for one product and finds a positive correlation. Which of the following would give a MORE informative (more causally convincing) answer about whether the ad campaign increases sales than that simple correlation? (Select all that apply.)`;
-    const options = [
-      "Run a randomized geo experiment: randomly assign some regions to receive the campaign and others to serve as a holdout, then compare sales between the two.",
-      "Use a difference-in-differences approach: compare the sales trend in advertised regions to the trend in similar, non-advertised regions over the same period, to net out seasonality and broader trends.",
-      "Just compute the same correlation coefficient again on a second month of data.",
-      "Round the sales and advertising numbers to fewer decimal places before comparing them.",
-    ];
-    return mkMultiQuestion(
-      "applied",
-      stem,
-      options,
-      [0, 1],
-      "A randomized (or cluster-randomized) holdout test and a difference-in-differences comparison against a similar untreated group both move beyond a simple correlation toward isolating the campaign's causal effect. Recomputing the same correlation on more data, or changing numeric precision, doesn't address confounding or reverse causality at all."
-    );
-  }
+  /* ============================================================
+     (f) Alternative Methods & When Experiments Aren't Feasible
+     ============================================================ */
 
-  /* ============================ (f) Alternative methods ===================== */
-
-  function q_alt_focus_groups() {
-    const stem = `A firm relies on focus groups to decide whether a new product concept will succeed. Which statement best summarizes a real limitation of focus groups (relative to their strengths)?`;
+  function q_f1_focusgroups() {
+    const stem = `A firm relies on focus groups to decide whether a new product concept will succeed. Which statement best summarizes a real limitation of focus groups?`;
     const options = [
-      "Focus groups are excellent for generating rich, qualitative hypotheses about consumer reactions, but their small, often non-representative samples and social dynamics (e.g., groupthink, social desirability) make them a poor basis for causal or precise quantitative claims.",
-      "Focus groups are just as statistically reliable as a large randomized experiment, since 'qualitative' data is inherently more trustworthy.",
-      "Focus groups have no value at all and should never be used in consumer research.",
-      "Focus groups are ideal for measuring incremental ad lift because participants can self-report exact purchase intent percentages.",
+      "Focus groups are great for generating ideas and hearing how people talk about a product, but with only a handful of participants and no random assignment, they can't tell you whether something actually caused a change in behavior.",
+      "Focus groups are just as reliable as a large randomized experiment.",
+      "Focus groups have no value at all and should never be used.",
+      "Focus groups are ideal for precisely measuring incremental sales lift.",
     ];
     return mkQuestion(
       "altmethods",
       stem,
       options,
       0,
-      "Focus groups are a valuable tool for generating ideas, uncovering language customers use, and surfacing reactions researchers hadn't considered — but small sample sizes, self-selection into the group, social pressure, and reliance on stated (not actual) behavior make them unsuited for precise or causal conclusions."
+      "Focus groups (like observation and interviews) are useful for generating ideas and understanding how people think and talk about a product — but they aren't experiments. With a handful of participants and no random assignment, they can tell you what people say, not what actually caused a change in behavior."
     );
   }
 
-  function q_alt_observational_pros_cons() {
+  function q_f2_observational() {
     const stem = `Compared to a randomized experiment, what is a genuine advantage — not just a drawback — of using large-scale observational (naturally occurring) data?`;
     const options = [
-      "It can offer much larger sample sizes and reflect real-world behavior 'in the wild' (high external validity), even though it's harder to draw clean causal conclusions from it.",
+      "It can offer much larger sample sizes and reflect how people actually behave in the real world, even though it's harder to draw a clean causal conclusion from it.",
       "It automatically solves the problem of confounding variables.",
       "It always produces more statistically significant results than experiments.",
-      "It removes the need for any statistical analysis.",
+      "It removes the need for any data analysis.",
     ];
     return mkQuestion(
       "altmethods",
       stem,
       options,
       0,
-      "Observational data's real strength is scale and realism — it captures how people actually behave, often at large scale and low cost, which experiments (especially lab experiments) can lack. Its weakness is the flip side: without random assignment, confounds make causal claims much harder to trust."
+      "Observational data's real strength is scale and realism — it reflects how people actually behave, often at large scale and low cost. The tradeoff is the flip side of that same coin: without random assignment, confounds make a causal claim much harder to trust."
     );
   }
 
-  function q_alt_ethics_practicality() {
-    const scenarios = [
-      "A bank wants to know whether denying loans to certain applicants causes worse financial outcomes for them",
-      "A company wants to know whether charging different customers very different prices for an identical product (based only on their willingness to pay) causes changes in loyalty",
-      "A health-adjacent brand wants to know whether withholding a safety warning from some customers changes their purchase behavior",
-    ];
-    const s = pick(scenarios);
-    const stem = `${s}, but a true randomized experiment would be unethical or would violate fairness/legal norms. What's the most reasonable path forward?`;
+  function q_f3_ethics() {
+    const stem = `A company wants to know whether charging very different prices to different customers (based on what each person seems willing to pay) changes their loyalty. But randomly assigning customers to unfair prices raises real ethical and legal concerns, so a true experiment isn't an option here. What's the most reasonable path forward?`;
     const options = [
-      "Run the randomized experiment anyway, since business insight justifies the ethical cost.",
-      "Give up on ever answering the question.",
-      "Use quasi-experimental approaches (e.g., natural experiments, matching on observables, instrumental variables, or policy discontinuities) that approximate random assignment without directly manipulating people in harmful ways.",
-      "Just trust whichever conclusion leadership already prefers.",
+      "Run the experiment anyway, since the business insight is valuable enough to justify it.",
+      "Rely on careful observational/correlational evidence instead, while staying appropriately cautious about how confident the causal conclusion can be, since it isn't backed by a true experiment.",
+      "There's no way to learn anything useful without running a true experiment.",
+      "Assume any correlation found this way is definitely causal, since collecting new data would be too difficult.",
     ];
     return mkQuestion(
       "altmethods",
       stem,
       options,
-      2,
-      "When true experiments are off the table for ethical, legal, or practical reasons, researchers turn to quasi-experimental designs — natural experiments, matching, regression discontinuity, instrumental variables — that try to approximate the logic of random assignment using naturally occurring variation, without directly and deliberately harming participants."
+      1,
+      "When a true experiment isn't ethical or practical, researchers still gather the best evidence they can — usually observational or correlational — but stay appropriately humble about how strong a causal claim it supports, rather than either giving up entirely or overstating their confidence."
     );
   }
 
-  function q_alt_sparse_data() {
+  function q_f4_sparsedata() {
     const company = pick(["Maple & Co (a tiny online candle shop)", "The Corner Bookshop (a small independent online bookstore)", "Hearth Goods (a boutique home-decor store)", "Little Loom (a small online yarn/craft store)"]);
     const orders = randInt(2, 6);
-    const stem = `${company} gets only about ${orders} orders per week. The owner wants to A/B test a new homepage design. Why is a traditional statistical A/B test poorly suited here, and what's a more sensible alternative?`;
+    const stem = `${company} gets only about ${orders} orders per week. The owner wants to A/B test a new homepage design. Why is a traditional A/B test poorly suited here, and what's a more sensible alternative?`;
     const options = [
-      `With so few orders, it would take an extremely long time to accumulate enough data for statistical power to detect all but a huge effect — better alternatives include qualitative usability testing, heuristic/expert review, larger and more obvious design changes, or pooling data over a much longer window while controlling for trends.`,
-      "It's not actually a problem — statistical tests work identically regardless of sample size.",
+      `With so few orders, it would take an extremely long time to collect enough data to tell a real difference from random noise — better alternatives include qualitative usability testing, expert/heuristic review, making bigger and more obviously impactful changes, or watching a much longer time window.`,
+      "It's not actually a problem — a test works exactly the same regardless of how much traffic a site gets.",
       "The owner should still run a formal A/B test but only look at the results after a single day.",
-      "The only fix is to randomly assign individual customers to conditions using a coin flip performed by the owner personally.",
+      "The only fix is to randomly assign individual customers to conditions with a coin flip performed by the owner personally.",
     ];
     return mkQuestion(
       "altmethods",
       stem,
       options,
       0,
-      `Statistical power depends heavily on sample size; at ${orders} orders/week, a formal A/B test could take months or years to detect all but very large effects, and even then noise dominates. For very low-traffic settings, better options include qualitative/usability testing, expert heuristic evaluation, making bigger and more obviously impactful changes, or accepting a longer observation window with careful controls for seasonality — rather than relying on underpowered statistical significance testing.`
+      `With only ${orders} orders/week, it could take months or years to collect enough data to tell a real effect apart from ordinary week-to-week noise. For very low-traffic situations, better options include qualitative/usability testing, expert heuristic evaluation, making bigger and more obviously impactful changes, or accepting a much longer observation window — rather than relying on a formal test that doesn't have enough data to work.`
     );
   }
 
-  /* ============================ registry ==================================== */
+  /* ============================================================
+     registry
+     ============================================================ */
 
   const CONCEPTS = [
     {
       id: "causation",
-      label: "Correlation, Causation & Confounds",
+      label: "Correlation, Causation, Confounds & Selection Effects",
       letter: "a",
-      generators: [
-        q_causation_confound,
-        q_causation_selfselection,
-        q_causation_randomizedvalid,
-        q_causation_spurious_graph,
-        q_causation_beforeafter_nuanced,
-        q_causation_anyofabove,
-        q_causation_differinggroups,
-        q_causation_whatmatters,
-        q_causation_coefficient,
-        q_causation_confound_multi,
-      ],
+      generators: [q_a1_correlation_type, q_a2_confound, q_a3_selfselection, q_a4_dogownership_multi, q_a5_headstart_multi, q_a6_anyofabove, q_a7_confound_multi, q_a8_whatmatters],
     },
-    { id: "incrementality", label: "Incrementality", letter: "b", generators: [q_incr_noholdout_confound, q_incr_highintent, q_incr_properholdout, q_incr_doublecounting] },
-    { id: "stats", label: "P-values, Correlation & Research Basics", letter: "c", generators: [q_stats_pvalue_meaning, q_stats_correlation_strength, q_stats_basic_vs_applied, q_stats_nonsignificant, q_stats_ci_or_significance] },
+    {
+      id: "incrementality",
+      label: "Incrementality",
+      letter: "b",
+      generators: [q_b1_sponsored_search_trap, q_b2_newtonbaby, q_b3_freetrial, q_b4_packers_email, q_b5_comparisongroup, q_b6_doublecounting],
+    },
+    {
+      id: "stats",
+      label: "P-values & Research Basics",
+      letter: "c",
+      generators: [q_c1_coinflip, q_c2_samplesize, q_c3_pvalue_meaning, q_c4_basicvsapplied, q_c5_nonsignificant],
+    },
     {
       id: "goldstandard",
-      label: "Random Assignment, Gold-Standard Experiments & A/B Tests",
+      label: "Random Assignment, A/B Tests & Cluster Randomization",
       letter: "d",
-      generators: [q_gold_why_rct, q_gold_why_prepost_fails, q_gold_abtest_recognize, q_gold_pricing_framing, q_gold_cluster_randomization, q_gold_seasonality, q_gold_matching, q_gold_which_designs_multi],
+      generators: [q_d1_why_random, q_d2_representative_sample_trap, q_d3_identify_abtest, q_d4_how_abtests_work, q_d5_cluster_rationale, q_d6_enough_clusters, q_d7_headstart_lottery, q_d8_google_flights, q_d9_airbnb, q_d10_which_designs_multi],
     },
-    { id: "applied", label: "Applied Business Scenarios", letter: "e", generators: [q_applied_webpage, q_applied_national_campaign, q_applied_observational_bias, q_applied_pick_method, q_applied_two_ways_better] },
-    { id: "altmethods", label: "Alternative Methods & Their Limits", letter: "f", generators: [q_alt_focus_groups, q_alt_observational_pros_cons, q_alt_ethics_practicality, q_alt_sparse_data] },
+    {
+      id: "applied",
+      label: "Applied Business Scenarios",
+      letter: "e",
+      generators: [q_e1_cmo_multi, q_e2_webpage, q_e3_after_the_fact, q_e4_pick_method],
+    },
+    {
+      id: "altmethods",
+      label: "Alternative Methods & When Experiments Aren't Feasible",
+      letter: "f",
+      generators: [q_f1_focusgroups, q_f2_observational, q_f3_ethics, q_f4_sparsedata],
+    },
   ];
 
-  /* 16-question blueprint. Weighted toward (a) Correlation/Causation/Confounds
-     and (d) Random Assignment/Gold-Standard/A-B Tests, since those cover the
-     broadest ground (confounds + selection + reverse causality in one, and
-     experimental logic + A/B tests + getting-closer-to-gold-standard in the
-     other). b/c/e/f get lighter, focused coverage. */
+  /* 16-question blueprint, weighted by how much lecture time each area
+     actually gets: (d) random assignment/A-B tests/cluster randomization
+     is the single biggest topic in the deck, followed closely by (a) and
+     (b); (c), (e), (f) get lighter, focused coverage. */
   const BLUEPRINT = [
-    { concept: "causation", count: 4 },
-    { concept: "incrementality", count: 2 },
+    { concept: "causation", count: 3 },
+    { concept: "incrementality", count: 3 },
     { concept: "stats", count: 2 },
     { concept: "goldstandard", count: 4 },
     { concept: "applied", count: 2 },
@@ -923,8 +954,6 @@
     return CONCEPTS.find((c) => c.id === id);
   }
 
-  /* Generate one fresh random question for a given concept id.
-     Avoids immediately repeating the same generator as `avoidGenIndex` when possible. */
   function generate(conceptId, avoidGenIndex) {
     const c = conceptById(conceptId);
     if (!c) throw new Error("Unknown concept: " + conceptId);
@@ -941,9 +970,6 @@
     return q;
   }
 
-  /* Build the fixed-length (16-question) quiz using the blueprint, with
-     randomized content & randomized concept ordering within slots so the
-     quiz feels different each retake while covering the same ground. */
   function buildBlueprintQuiz() {
     const pool = [];
     BLUEPRINT.forEach((slot) => {

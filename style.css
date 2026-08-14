@@ -185,6 +185,44 @@ h2 {
 }
 .name-form input:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
 
+/* ---------------- quiz-me category picker ---------------- */
+
+.category-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+  margin-bottom: 4px;
+}
+.category-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  cursor: pointer;
+  font-size: 0.98rem;
+}
+.category-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand);
+  flex-shrink: 0;
+}
+.category-option .letter { color: #9aa3b2; font-weight: 700; margin-right: 2px; }
+
+.category-scope-bar {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin-bottom: 14px;
+}
+.category-scope-bar strong { color: var(--brand-dark); }
+
+.mastery-item.out-of-scope { opacity: 0.4; }
+
 /* ---------------- quiz header / progress ---------------- */
 
 .quiz-header {
@@ -277,6 +315,15 @@ h2 {
   margin: 0 0 18px;
   line-height: 1.55;
 }
+
+.question-visual {
+  background: #fbfbfd;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 8px 4px;
+  margin: 0 0 18px;
+}
+.question-visual svg { display: block; margin: 0 auto; }
 
 .options {
   display: flex;
