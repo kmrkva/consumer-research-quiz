@@ -236,7 +236,7 @@
     const stem = `A news article claims that owning a dog causes people to live longer, based on a study finding that dog owners live longer, on average, than non-owners. Before accepting that causal claim, which of the following are plausible alternative explanations? (Select all that apply.)`;
     const options = [
       "Healthier or wealthier people might be more likely to get a dog in the first place (a selection effect) — dog owners could have simply started out healthier.",
-      "Dog owners might simply walk more because of the dog, and it's the extra exercise (a third variable) — not the dog itself — that's driving the health benefit.",
+      "People who already walk or exercise more might be more likely to get a dog in the first place, and it's that pre-existing activity level (a third variable) — not the dog itself — that's driving the health benefit.",
       "The study measured a very large number of people.",
       "The difference between dog owners and non-owners was statistically significant.",
     ];
@@ -245,7 +245,7 @@
       stem,
       options,
       [0, 1],
-      "A selection effect (healthier/wealthier people choosing to get a dog) and a third variable (exercise from walking the dog) are both genuine alternative explanations for this correlation — neither requires the dog itself to be the cause. A large sample size and statistical significance both just mean the pattern is probably real and not due to noise — neither one tells you *why* the pattern exists, so neither rules out these alternative explanations."
+      "Both options 1 and 2 describe people self-selecting into dog ownership based on traits (health, wealth, existing activity level) they already had beforehand — both are genuine alternative explanations for this correlation that don't require the dog itself to be the cause. (Compare that to a different story — 'owning a dog gets people to walk more, and that's what improves their health' — which would actually still be the dog causing the outcome, just indirectly through exercise, rather than an alternative explanation.) A large sample size and statistical significance both just mean the pattern is probably real and not due to noise — neither one tells you *why* the pattern exists, so neither rules out these alternative explanations."
     );
   }
 
@@ -348,7 +348,7 @@
     const stem = `A mattress company spent heavily on "branded search" ads — whenever someone searched "[Company] mattress," a sponsored ad for their product appeared first. Results looked great: lots of clicks and purchases, and revenue was higher than the ad spend. Remember: incremental sales = sales that wouldn't have happened without the ad. Did the ads cause an increase in INCREMENTAL sales?`;
     const options = [
       "Yes — since revenue was higher than ad spend, the ads clearly paid for themselves.",
-      "No — most people who clicked the ad were already specifically searching for this brand, so they likely would have bought the same product anyway (e.g., by clicking the free organic listing).",
+      "We can't be confident they did — most people who clicked the ad were already specifically searching for this brand, so a good chance those clicks (and purchases) weren't incremental; they might have bought the same product anyway, e.g., by clicking the free organic listing instead.",
       "Yes, branded search ads always drive fully incremental sales since the customer already knows the brand.",
       "There's no way to test whether ad spending like this is incremental.",
     ];
@@ -357,7 +357,7 @@
       stem,
       options,
       1,
-      `This mirrors a real branded-search case: after a careful incrementality test (turning the ads off for some searches/regions and comparing), the company found almost none of the "ad-driven" sales were actually incremental — customers searching their own brand name would have bought anyway. Their conclusion: spend close to $0 on that kind of branded search.`
+      `This mirrors a real branded-search case: revenue exceeding ad spend doesn't tell you the ads caused that revenue, since most of those customers were already searching for the brand by name and likely would have found (and clicked) the free organic listing anyway. That doesn't prove the ads added zero sales — but it means the "success" story can't be trusted at face value. To actually find out, the company would need a real incrementality test (e.g., turning the ads off for some searches/regions and comparing) — which is exactly what a similar real company did, and found that only a small share of those sales were truly incremental.`
     );
   }
 
@@ -444,13 +444,14 @@
     const tiers = [
       { h: 48, t: 52, verdict: 0 },
       { h: 52, t: 48, verdict: 0 },
-      { h: 41, t: 59, verdict: 1 },
-      { h: 59, t: 41, verdict: 1 },
+      { h: 41, t: 59, verdict: 1, p: 0.07 },
+      { h: 59, t: 41, verdict: 1, p: 0.07 },
       { h: 25, t: 75, verdict: 2 },
       { h: 75, t: 25, verdict: 2 },
     ];
     const tier = pick(tiers);
-    const stem = `You flip a coin 100 times and get ${tier.h} heads and ${tier.t} tails. What should you conclude?`;
+    const pClause = tier.p !== undefined ? ` (this works out to p = ${tier.p})` : "";
+    const stem = `You flip a coin 100 times and get ${tier.h} heads and ${tier.t} tails${pClause}. What should you conclude?`;
     const options = [
       "This is close enough to a 50/50 split that it's easily explained by random chance alone — no real reason to suspect the coin is unfair.",
       "This is somewhat unusual, but still not quite strong enough evidence to confidently say the coin is unfair.",
@@ -954,17 +955,17 @@
     return CONCEPTS.find((c) => c.id === id);
   }
 
-  function generate(conceptId, avoidGenIndex) {
+  function generate(conceptId, avoidGenIndex, excludeIndices) {
     const c = conceptById(conceptId);
     if (!c) throw new Error("Unknown concept: " + conceptId);
-    let idx = Math.floor(Math.random() * c.generators.length);
-    if (c.generators.length > 1 && avoidGenIndex !== undefined) {
-      let tries = 0;
-      while (idx === avoidGenIndex && tries < 8) {
-        idx = Math.floor(Math.random() * c.generators.length);
-        tries++;
-      }
+    const totalIdx = c.generators.map((_, i) => i);
+    let pool = excludeIndices && excludeIndices.length ? totalIdx.filter((i) => !excludeIndices.includes(i)) : totalIdx.slice();
+    if (!pool.length) pool = totalIdx.slice(); // everything already answered correctly -> allow repeats again
+    if (pool.length > 1 && avoidGenIndex !== undefined) {
+      const filtered = pool.filter((i) => i !== avoidGenIndex);
+      if (filtered.length) pool = filtered;
     }
+    const idx = pool[Math.floor(Math.random() * pool.length)];
     const q = c.generators[idx]();
     q._genIndex = idx;
     return q;

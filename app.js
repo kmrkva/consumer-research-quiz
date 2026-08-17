@@ -275,7 +275,7 @@
       }
       persisted.lastCategorySelection = selected.length === QB.CONCEPTS.length ? null : selected;
       saveState();
-      go({ screen: "quizme", state: { current: null, avoidId: null, answered: false, selected: null, sessionCorrect: 0, sessionTotal: 0, categories: selected } });
+      go({ screen: "quizme", state: { current: null, avoidId: null, answered: false, selected: null, sessionCorrect: 0, sessionTotal: 0, categories: selected, retired: {} } });
     });
   }
 
@@ -357,14 +357,16 @@
 
   function renderQuizMe() {
     if (!view.state) {
-      view.state = { current: null, avoidId: null, answered: false, selected: null, sessionCorrect: 0, sessionTotal: 0, categories: null };
+      view.state = { current: null, avoidId: null, answered: false, selected: null, sessionCorrect: 0, sessionTotal: 0, categories: null, retired: {} };
     }
     const state = view.state;
+    if (!state.retired) state.retired = {}; // defensive, for any older state shapes still in flight
     const categories = state.categories && state.categories.length ? state.categories : null;
 
     if (!state.current) {
       const conceptId = pickWeightedConcept(state.avoidId, categories);
-      state.current = QB.generate(conceptId);
+      const excludeIndices = state.retired[conceptId] || [];
+      state.current = QB.generate(conceptId, undefined, excludeIndices);
       state.answered = false;
       state.selected = null;
     }
@@ -406,6 +408,11 @@
       if (correct) {
         m.correct++;
         m.level = Math.min(MASTERY_TARGET, m.level + 1);
+        // Retire this exact question (generator) for the rest of the session so a
+        // correctly-answered question doesn't show up again right away. Missed
+        // questions stay eligible so students see them again for reinforcement.
+        if (!state.retired[q.concept]) state.retired[q.concept] = [];
+        if (!state.retired[q.concept].includes(q._genIndex)) state.retired[q.concept].push(q._genIndex);
       } else {
         m.level = Math.max(0, m.level - 1);
       }
@@ -421,6 +428,7 @@
         sessionCorrect: state.sessionCorrect,
         sessionTotal: state.sessionTotal,
         categories: state.categories,
+        retired: state.retired,
       };
       go({ screen: "quizme", state: nextState });
     });
